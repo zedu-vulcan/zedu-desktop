@@ -73,3 +73,5 @@ cmake-build-release/
 
 
 public/fonts/
+# Widget Preview related
+.widget_preview/
