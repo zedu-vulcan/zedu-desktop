@@ -65,6 +65,8 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
             .togglePinned(conversation.channelId);
       case 'search_in_conversation':
         await _showConversationSearch();
+      case 'pinned_messages':
+        await _showPinnedMessages();
       case 'view_files':
         await _showConversationFiles();
       case 'clear_history':
@@ -237,6 +239,79 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                     );
                   },
                 ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPinnedMessages() async {
+    final channelId = widget.conversation.channelId;
+    final future = ref.read(dmRepositoryProvider).getPinnedMessages(channelId);
+    final history = ref.read(chatHistoryProvider(channelId));
+    final localPinned = history.messages
+        .where((m) => m['is_pinned'] == true || m['pinned'] == true)
+        .toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${widget.conversation.displayName} pinned messages'),
+        content: SizedBox(
+          width: 420,
+          height: 320,
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final remotePins = snapshot.data ?? const [];
+              final allPins = <Map<String, dynamic>>[
+                ...remotePins,
+                ...localPinned,
+              ];
+              if (allPins.isEmpty) {
+                return const Center(
+                  child: Text('No pinned messages in this conversation.'),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                itemCount: allPins.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = allPins[index];
+                  final rawText = (item['message'] ?? item['content'] ?? '')
+                      .toString();
+                  final cleanText = rawText
+                      .replaceAll(RegExp(r'<[^>]*>'), '')
+                      .trim();
+                  final sender =
+                      (item['username'] ??
+                              item['full_name'] ??
+                              widget.conversation.displayName)
+                          .toString();
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.push_pin_outlined, size: 18),
+                    title: Text(
+                      sender,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      cleanText.isEmpty ? 'Pinned message' : cleanText,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
         actions: [
           TextButton(
@@ -537,6 +612,44 @@ class _DmChatHeader extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          Tooltip(
+            message: 'Search',
+            child: InkWell(
+              onTap: () => onMenuAction('search_in_conversation'),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.divider),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.search, size: 18, color: colors.textPrimary),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Pinned messages',
+            child: InkWell(
+              onTap: () => onMenuAction('pinned_messages'),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.divider),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  Icons.push_pin_outlined,
+                  size: 18,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Consumer(
             builder: (context, ref, child) {
               return InkWell(
@@ -592,6 +705,13 @@ class _DmChatHeader extends StatelessWidget {
                 value: 'pin_conversation',
                 child: Text(
                   'Pin conversation',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'pinned_messages',
+                child: Text(
+                  'Pinned messages',
                   style: TextStyle(color: colors.textPrimary),
                 ),
               ),
