@@ -107,4 +107,49 @@ class DmRepository {
       },
     );
   }
+
+  Future<List<Map<String, dynamic>>> getPinnedMessages(String channelId) async {
+    final response = await _apiClient.get<Map<String, dynamic>>(
+      path: '/channels/pin/$channelId',
+    );
+    final rawPins = response.data['data'];
+    if (rawPins is! List || rawPins.isEmpty) return const [];
+
+    final pins = rawPins
+        .whereType<Map<dynamic, dynamic>>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    final threadById = <String, Map<String, dynamic>>{};
+    final needsLookup = pins.any(
+      (p) => (p['message'] ?? p['content'])?.toString().trim().isEmpty ?? true,
+    );
+
+    if (needsLookup) {
+      try {
+        final threadsRes = await _apiClient.get<Map<String, dynamic>>(
+          path: '/dms/channels/$channelId/threads',
+          queryParameters: {'page': 1, 'limit': 50},
+        );
+        final rawThreads = threadsRes.data['data'];
+        if (rawThreads is List) {
+          for (final item in rawThreads.whereType<Map<dynamic, dynamic>>()) {
+            final map = Map<String, dynamic>.from(item);
+            final tid = map['thread_id']?.toString() ?? '';
+            final mid = map['id']?.toString() ?? '';
+            if (tid.isNotEmpty) threadById[tid] = map;
+            if (mid.isNotEmpty) threadById[mid] = map;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return pins.map((pin) {
+      final id =
+          (pin['id'] ?? pin['thread_id'] ?? pin['message_id'])?.toString() ??
+          '';
+      final matched = threadById[id];
+      return <String, dynamic>{...pin, ...?matched, 'id': id};
+    }).toList();
+  }
 }

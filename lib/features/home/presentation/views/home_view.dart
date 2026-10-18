@@ -440,6 +440,33 @@ class _ChatArea extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          Consumer(
+            builder: (context, ref, _) {
+              final channelId = ref.watch(activeChatProvider).id ?? 'general';
+              return Tooltip(
+                message: 'Pinned messages',
+                child: InkWell(
+                  onTap: () =>
+                      _showChannelPinnedMessages(context, ref, channelId),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: colors.divider),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.push_pin_outlined,
+                      size: 18,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 12),
           _HeaderAction(icon: Icons.headphones_outlined, label: 'Start Buzz'),
           const SizedBox(width: 12),
           CircleAvatar(
@@ -449,6 +476,71 @@ class _ChatArea extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Icon(Icons.more_vert, color: colors.textHint),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showChannelPinnedMessages(
+    BuildContext context,
+    WidgetRef ref,
+    String channelId,
+  ) async {
+    final future = ref.read(dmRepositoryProvider).getPinnedMessages(channelId);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('#$channelId pinned messages'),
+        content: SizedBox(
+          width: 420,
+          height: 320,
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final pins = snapshot.data ?? const [];
+              if (pins.isEmpty) {
+                return const Center(
+                  child: Text('No pinned messages in this channel.'),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                itemCount: pins.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = pins[index];
+                  final rawText = (item['message'] ?? item['content'] ?? '')
+                      .toString();
+                  final cleanText = rawText
+                      .replaceAll(RegExp(r'<[^>]*>'), '')
+                      .trim();
+                  final sender =
+                      (item['username'] ?? item['full_name'] ?? 'Member')
+                          .toString();
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.push_pin_outlined, size: 18),
+                    title: Text(
+                      sender,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      cleanText.isEmpty ? 'Pinned message' : cleanText,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );
