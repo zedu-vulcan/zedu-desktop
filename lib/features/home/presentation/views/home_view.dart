@@ -34,7 +34,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
             child: Row(
               children: [
                 AppSidebarRail(activeType: ref.watch(homeSidebarProvider)),
-                const _MainSidebarSwitcher(),
+                ResizableSidebar(child: const _MainSidebarSwitcher()),
                 Expanded(
                   child: Stack(
                     children: [
@@ -168,7 +168,6 @@ class _MainSidebar extends StatelessWidget {
     final colors = context.colors;
 
     return Container(
-      width: 320,
       color: colors.sidebar,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
