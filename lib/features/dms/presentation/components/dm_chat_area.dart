@@ -770,21 +770,34 @@ class _MessageBubble extends ConsumerWidget {
     required this.channelId,
   });
 
-  TextSpan _parseRichText(String text, TextStyle defaultStyle) {
+  TextSpan _parseRichText(
+    String text,
+    TextStyle defaultStyle, {
+    required Color dividerColor,
+  }) {
     if (text.isEmpty) return TextSpan(style: defaultStyle, text: '');
+
+    // A line holding only `---` (what the composer's Divider button inserts).
+    final dividerRegex = RegExp(r'(?<=^|\n)---(?=\n|$)');
 
     final boldRegex = RegExp(r'\*\*(.*?)\*\*', dotAll: true);
     final italicRegex = RegExp(r'(?<!\*)\*(.*?)\*(?!\*)', dotAll: true);
     final strikeRegex = RegExp(r'~~(.*?)~~', dotAll: true);
     final codeRegex = RegExp(r'`(.*?)`', dotAll: true);
 
-    final allPatterns = [boldRegex, italicRegex, strikeRegex, codeRegex];
+    final allPatterns = [
+      dividerRegex,
+      boldRegex,
+      italicRegex,
+      strikeRegex,
+      codeRegex,
+    ];
     final combined = RegExp(
       allPatterns.map((r) => r.pattern).join('|'),
       dotAll: true,
     );
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     int lastEnd = 0;
 
     for (final match in combined.allMatches(text)) {
@@ -798,7 +811,19 @@ class _MessageBubble extends ConsumerWidget {
       }
 
       final raw = match.group(0)!;
-      if (boldRegex.hasMatch(raw)) {
+      if (dividerRegex.hasMatch(raw)) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              width: double.infinity,
+              height: 1,
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              color: dividerColor,
+            ),
+          ),
+        );
+      } else if (boldRegex.hasMatch(raw)) {
         final inner =
             match.group(1) ?? boldRegex.firstMatch(raw)?.group(1) ?? raw;
         spans.add(
@@ -958,6 +983,9 @@ class _MessageBubble extends ConsumerWidget {
                           color: isMe ? Colors.white : colors.textPrimary,
                           fontSize: 14,
                         ),
+                        dividerColor: isMe
+                            ? Colors.white.withValues(alpha: 0.6)
+                            : colors.divider,
                       ),
                     ),
                   ),
