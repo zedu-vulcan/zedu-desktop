@@ -194,23 +194,8 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12, right: 24),
-            child: Row(
-              children: [
-                Icon(Icons.group_outlined, size: 18, color: colors.textHint),
-                const SizedBox(width: 8),
-                Text(
-                  'People',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colors.textHint,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
           Container(
+            margin: const EdgeInsets.only(right: 24),
             padding: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
               border: Border(
@@ -233,6 +218,22 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
                   style: textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12, right: 24),
+            child: Row(
+              children: [
+                Icon(Icons.group_outlined, size: 18, color: colors.textHint),
+                const SizedBox(width: 8),
+                Text(
+                  'People',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colors.textHint,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
