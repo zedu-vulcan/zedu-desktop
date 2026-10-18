@@ -52,6 +52,10 @@ class DmListTile extends ConsumerWidget {
     return InkWell(
       onTap: () {
         ref.read(selectedDmProvider.notifier).select(conversation);
+        final activeChat = ref.read(activeChatProvider);
+        if (activeChat.type == ActiveChatType.channelDirectory) {
+          ref.read(activeChatProvider.notifier).selectChannel('general');
+        }
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),

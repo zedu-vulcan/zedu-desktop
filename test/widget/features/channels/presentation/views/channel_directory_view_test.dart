@@ -67,6 +67,41 @@ void main() {
       },
     );
 
+    testWidgets(
+      'displays Joined badge for #general even when is_joined field is absent from backend response',
+      (tester) async {
+        final generalChannel = Channel.fromJson({
+          'id': 'g1',
+          'name': 'general',
+          'description': 'General chat',
+          'organisation_id': 'org1',
+          'owner_id': 'owner1',
+          'members_count': 10,
+        });
+        final otherChannel = Channel.fromJson({
+          'id': 'o1',
+          'name': 'announcements',
+          'description': 'Company announcements',
+          'organisation_id': 'org1',
+          'owner_id': 'owner2',
+          'members_count': 5,
+        });
+
+        await tester.pumpWidget(
+          buildTestWidget(
+            channelState: ChannelState(
+              channels: [generalChannel, otherChannel],
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('# general'), findsOneWidget);
+        expect(find.text('# announcements'), findsOneWidget);
+        expect(find.text('Joined'), findsOneWidget);
+      },
+    );
+
     testWidgets('filters channel list when search text is entered', (
       tester,
     ) async {

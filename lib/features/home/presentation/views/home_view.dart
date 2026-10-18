@@ -1,4 +1,3 @@
-
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -159,11 +158,6 @@ class _ChatAreaSwitcher extends ConsumerWidget {
     if (activeChat.type == ActiveChatType.newGroupChat) {
       return const NewGroupChatView();
     }
-
-    if (activeChat.type == ActiveChatType.channelDirectory) {
-      return const ChannelDirectoryView();
-    }
-
     if (state == HomeSidebarType.dms) {
       if (selectedDm != null) {
         return DmChatArea(conversation: selectedDm);
@@ -183,8 +177,7 @@ class _ChatAreaSwitcher extends ConsumerWidget {
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF47459D)
-                          .withValues(alpha: 0.10),
+                      color: const Color(0xFF47459D).withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(28),
                     ),
                     child: const Icon(
@@ -256,6 +249,11 @@ class _ChatAreaSwitcher extends ConsumerWidget {
           ),
         ),
       );
+    }
+
+    if (state == HomeSidebarType.home &&
+        activeChat.type == ActiveChatType.channelDirectory) {
+      return const ChannelDirectoryView();
     }
 
     return const _ChatArea();

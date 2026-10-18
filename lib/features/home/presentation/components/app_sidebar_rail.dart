@@ -25,6 +25,12 @@ class AppSidebarRail extends ConsumerWidget {
         return;
       }
       ref.read(homeSidebarProvider.notifier).setType(type);
+      if (type != HomeSidebarType.home) {
+        final activeChat = ref.read(activeChatProvider);
+        if (activeChat.type == ActiveChatType.channelDirectory) {
+          ref.read(activeChatProvider.notifier).selectChannel('general');
+        }
+      }
     }
 
     return Container(

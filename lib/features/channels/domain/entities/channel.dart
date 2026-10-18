@@ -26,9 +26,10 @@ class Channel {
   });
 
   factory Channel.fromJson(Map<String, dynamic> json) {
+    final name = json['name'] as String? ?? '';
     return Channel(
       id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
+      name: name,
       description: json['description'] as String? ?? '',
       organisationId: json['organisation_id'] as String? ?? '',
       isPrivate: json['is_private'] as bool? ?? false,
@@ -38,7 +39,9 @@ class Channel {
       unreadCount: json['unread_count'] as int? ?? 0,
       membersCount: json['members_count'] as int? ?? 0,
       isJoined:
-          json['is_joined'] as bool? ?? (json['joined'] as bool? ?? false),
+          json['is_joined'] as bool? ??
+          json['joined'] as bool? ??
+          (name.toLowerCase() == 'general'),
     );
   }
 
