@@ -126,6 +126,9 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
                         Divider(height: 1, color: colors.divider),
                     itemBuilder: (context, index) {
                       final channel = filteredChannels[index];
+                      final isJoined =
+                          channel.isJoined ||
+                          channel.name.toLowerCase() == 'general';
                       return InkWell(
                         onTap: () {
                           ref
@@ -150,7 +153,7 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
                               const SizedBox(height: 4),
                               Row(
                                 children: [
-                                  if (channel.isJoined) ...[
+                                  if (isJoined) ...[
                                     Icon(
                                       Icons.check,
                                       size: 14,

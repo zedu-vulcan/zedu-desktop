@@ -142,10 +142,6 @@ class _ChatAreaSwitcher extends ConsumerWidget {
     final selectedDm = ref.watch(selectedDmProvider);
     final activeChatState = ref.watch(activeChatProvider);
 
-    if (activeChatState.type == ActiveChatType.channelDirectory) {
-      return const ChannelDirectoryView();
-    }
-
     if (state == HomeSidebarType.dms) {
       if (selectedDm != null) {
         return DmChatArea(conversation: selectedDm);
@@ -161,6 +157,12 @@ class _ChatAreaSwitcher extends ConsumerWidget {
         );
       }
     }
+
+    if (state == HomeSidebarType.home &&
+        activeChatState.type == ActiveChatType.channelDirectory) {
+      return const ChannelDirectoryView();
+    }
+
     return const _ChatArea();
   }
 }

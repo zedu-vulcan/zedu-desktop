@@ -85,5 +85,42 @@ void main() {
         expect(find.text('Directories'), findsNothing);
       },
     );
+
+    testWidgets(
+      'clicking View all channels and switching to DMs tab on rail cleanly leaves directory',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        await tester.pumpWidget(buildHomeViewUnderTest());
+        await tester.pumpAndSettle();
+
+        // Click "View all channels" in sidebar
+        await tester.tap(find.text('View all channels'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Directories'), findsOneWidget);
+
+        // Switch to DMs tab on rail
+        await tester.tap(find.byIcon(Icons.chat_bubble_outline));
+        await tester.pumpAndSettle();
+
+        // Verify directory is dismissed in favor of DM area
+        expect(find.text('Directories'), findsNothing);
+        expect(
+          find.text('Select a conversation to start messaging'),
+          findsOneWidget,
+        );
+
+        // Switch back to Home tab on rail
+        await tester.tap(find.byIcon(Icons.home_filled));
+        await tester.pumpAndSettle();
+
+        // Should return to channel view, not directory
+        expect(find.text('Directories'), findsNothing);
+        expect(find.text('# general'), findsWidgets);
+      },
+    );
   });
 }
