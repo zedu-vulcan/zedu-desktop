@@ -6,6 +6,7 @@ enum ActiveChatType {
   newGroupChat,
   directMessage,
   channelDirectory,
+  peopleDirectory,
 }
 
 class ActiveChatState {
@@ -23,6 +24,9 @@ class ActiveChatState {
   );
   static const channelDirectory = ActiveChatState(
     type: ActiveChatType.channelDirectory,
+  );
+  static const peopleDirectory = ActiveChatState(
+    type: ActiveChatType.peopleDirectory,
   );
 
   @override
@@ -57,6 +61,10 @@ class ActiveChatNotifier extends Notifier<ActiveChatState> {
 
   void selectChannelDirectory() {
     state = ActiveChatState.channelDirectory;
+  }
+
+  void selectPeopleDirectory() {
+    state = ActiveChatState.peopleDirectory;
   }
 
   void selectNewGroupChat() {
