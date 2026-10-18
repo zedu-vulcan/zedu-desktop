@@ -163,6 +163,9 @@ class _ChatAreaSwitcher extends ConsumerWidget {
     if (activeChat.type == ActiveChatType.channelDirectory) {
       return const ChannelDirectoryView();
     }
+    if (activeChat.type == ActiveChatType.peopleDirectory) {
+      return const PeopleDirectoryView();
+    }
 
     if (state == HomeSidebarType.dms) {
       if (selectedDm != null) {
@@ -271,6 +274,7 @@ class _MainSidebar extends StatefulWidget {
 
 class _MainSidebarState extends State<_MainSidebar> {
   bool _isChannelsExpanded = true;
+  bool _isPeopleExpanded = true;
 
   @override
   Widget build(BuildContext context) {
@@ -323,21 +327,39 @@ class _MainSidebarState extends State<_MainSidebar> {
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(Icons.arrow_right, color: colors.onPrimary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'People',
-                  style: TextStyle(
-                    color: colors.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _isPeopleExpanded = !_isPeopleExpanded;
+                  });
+                },
+                child: Row(
+                  children: [
+                    Icon(
+                      _isPeopleExpanded
+                          ? Icons.arrow_drop_down
+                          : Icons.arrow_right,
+                      color: colors.onPrimary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'People',
+                      style: TextStyle(
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
+          if (_isPeopleExpanded) const _ViewAllPeopleButton(),
         ],
       ),
     );
@@ -381,6 +403,70 @@ class _ViewAllChannelsButton extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     'View all channels',
+                    style: TextStyle(
+                      color: isSelected
+                          ? colors.onPrimary
+                          : colors.onPrimary.withValues(alpha: 0.7),
+                      fontSize: 13,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isSelected
+                      ? colors.onPrimary
+                      : colors.onPrimary.withValues(alpha: 0.7),
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewAllPeopleButton extends ConsumerWidget {
+  const _ViewAllPeopleButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final activeChat = ref.watch(activeChatProvider);
+    final isSelected = activeChat.type == ActiveChatType.peopleDirectory;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Material(
+        color: isSelected
+            ? colors.onPrimary.withValues(alpha: 0.16)
+            : colors.onPrimary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            ref.read(activeChatProvider.notifier).selectPeopleDirectory();
+          },
+          hoverColor: colors.onPrimary.withValues(alpha: 0.12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: isSelected
+                    ? colors.onPrimary.withValues(alpha: 0.6)
+                    : colors.onPrimary.withValues(alpha: 0.24),
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'View all people',
                     style: TextStyle(
                       color: isSelected
                           ? colors.onPrimary
