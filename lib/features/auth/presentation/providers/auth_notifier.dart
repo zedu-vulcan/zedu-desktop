@@ -25,6 +25,14 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _restoreSession() async {
     AppLogger.d('Restoring session from storage', tag: _tag);
+    if (await _storage.isSessionOnly()) {
+      AppLogger.i('Session was not remembered — clearing token', tag: _tag);
+      await _storage.deleteAccessToken();
+      await _storage.setSessionOnly(false);
+      state = const AuthState(status: AuthStatus.unauthenticated);
+      return;
+    }
+
     final token = await _storage.getAccessToken();
     if (token == null) {
       AppLogger.i('No stored token — unauthenticated', tag: _tag);
@@ -44,7 +52,11 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({
+    required String email,
+    required String password,
+    bool rememberMe = true,
+  }) async {
     AppLogger.d('Login attempt — $email', tag: _tag);
     state = state.copyWith(isLoading: true, clearError: true);
 
@@ -52,7 +64,7 @@ class AuthNotifier extends Notifier<AuthState> {
     switch (result) {
       case Success<AuthSession>():
         AppLogger.i('Login succeeded — token persisted', tag: _tag);
-        await _storage.saveAccessToken(result.value.accessToken);
+        await _persistSession(result.value.accessToken, rememberMe: rememberMe);
         state = AuthState(
           status: AuthStatus.authenticated,
           user: result.value.user,
@@ -77,7 +89,7 @@ class AuthNotifier extends Notifier<AuthState> {
           'Magic link verification succeeded — token persisted',
           tag: _tag,
         );
-        await _storage.saveAccessToken(result.value.accessToken);
+        await _persistSession(result.value.accessToken);
         state = AuthState(
           status: AuthStatus.authenticated,
           user: result.value.user,
@@ -94,9 +106,15 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  Future<void> _persistSession(String token, {bool rememberMe = true}) async {
+    await _storage.saveAccessToken(token);
+    await _storage.setSessionOnly(!rememberMe);
+  }
+
   Future<void> logout() async {
     AppLogger.i('Logout — clearing session', tag: _tag);
     await _storage.deleteAccessToken();
+    await _storage.setSessionOnly(false);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
@@ -308,7 +326,7 @@ class AuthNotifier extends Notifier<AuthState> {
       switch (result) {
         case Success<AuthSession>():
           AppLogger.i('Google Sign-In succeeded — token persisted', tag: _tag);
-          await _storage.saveAccessToken(result.value.accessToken);
+          await _persistSession(result.value.accessToken);
           state = AuthState(
             status: AuthStatus.authenticated,
             user: result.value.user,
