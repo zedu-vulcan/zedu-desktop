@@ -41,11 +41,13 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
         channelState.channels.isNotEmpty || channelState.isLoading
         ? channelState.channels
         : _defaultChannels;
+    final query = _searchQuery.trim().toLowerCase();
 
     final filteredChannels = sourceChannels.where((c) {
-      if (_searchQuery.isEmpty) return true;
-      return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          c.description.toLowerCase().contains(_searchQuery.toLowerCase());
+      if (query.isEmpty) return true;
+
+      return c.name.toLowerCase().contains(query) ||
+          c.description.toLowerCase().contains(query);
     }).toList();
 
     return Material(
