@@ -68,6 +68,10 @@ void main() {
     expect(find.text('Export'), findsOneWidget);
     expect(find.text('Search'), findsOneWidget);
     expect(find.text('Leave channel'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text('Leave channel')).style?.color,
+      AppPalette.light.error,
+    );
   });
 
   group('HomeView View all channels navigation', () {

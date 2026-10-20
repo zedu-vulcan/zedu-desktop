@@ -643,18 +643,24 @@ class _ChatArea extends StatelessWidget {
             position: PopupMenuPosition.under,
             color: colors.background,
             icon: Icon(Icons.more_vert, color: colors.textHint),
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
                 value: 'details',
                 child: Text('Open channel details'),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'notifications',
                 child: Text('Notification Settings'),
               ),
-              PopupMenuItem(value: 'export', child: Text('Export')),
-              PopupMenuItem(value: 'search', child: Text('Search')),
-              PopupMenuItem(value: 'leave', child: Text('Leave channel')),
+              const PopupMenuItem(value: 'export', child: Text('Export')),
+              const PopupMenuItem(value: 'search', child: Text('Search')),
+              PopupMenuItem(
+                value: 'leave',
+                child: Text(
+                  'Leave channel',
+                  style: TextStyle(color: colors.error),
+                ),
+              ),
             ],
           ),
         ],
