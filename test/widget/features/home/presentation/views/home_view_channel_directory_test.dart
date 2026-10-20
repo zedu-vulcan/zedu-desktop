@@ -60,7 +60,29 @@ void main() {
     await tester.pumpWidget(buildHomeViewUnderTest());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Channel actions'));
+    final menuFinder = find.ancestor(
+      of: find.byTooltip('More actions'),
+      matching: find.byType(PopupMenuButton<String>),
+    );
+    final menuButton = tester.widget<PopupMenuButton<String>>(menuFinder);
+    expect(menuButton.tooltip, 'More actions');
+    expect(
+      menuButton.style?.shape?.resolve({WidgetState.hovered}),
+      isA<RoundedRectangleBorder>(),
+    );
+
+    final tooltipThemeFinder = find.ancestor(
+      of: menuFinder,
+      matching: find.byType(TooltipTheme),
+    );
+    final tooltipTheme = tester.widget<TooltipTheme>(tooltipThemeFinder);
+    expect(
+      (tooltipTheme.data.decoration! as BoxDecoration).color,
+      AppPalette.light.textPrimary,
+    );
+    expect(tooltipTheme.data.textStyle?.color, AppPalette.light.background);
+
+    await tester.tap(find.byTooltip('More actions'));
     await tester.pumpAndSettle();
 
     expect(find.text('Open channel details'), findsOneWidget);

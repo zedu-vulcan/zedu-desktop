@@ -638,30 +638,44 @@ class _ChatArea extends StatelessWidget {
             child: Icon(Icons.person, size: 18, color: colors.onPrimary),
           ),
           const SizedBox(width: 8),
-          PopupMenuButton<String>(
-            tooltip: 'Channel actions',
-            position: PopupMenuPosition.under,
-            color: colors.background,
-            icon: Icon(Icons.more_vert, color: colors.textHint),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'details',
-                child: Text('Open channel details'),
+          TooltipTheme(
+            data: TooltipThemeData(
+              decoration: BoxDecoration(
+                color: colors.textPrimary,
+                borderRadius: BorderRadius.circular(4),
               ),
-              const PopupMenuItem(
-                value: 'notifications',
-                child: Text('Notification Settings'),
-              ),
-              const PopupMenuItem(value: 'export', child: Text('Export')),
-              const PopupMenuItem(value: 'search', child: Text('Search')),
-              PopupMenuItem(
-                value: 'leave',
-                child: Text(
-                  'Leave channel',
-                  style: TextStyle(color: colors.error),
+              textStyle: TextStyle(color: colors.background),
+            ),
+            child: PopupMenuButton<String>(
+              tooltip: 'More actions',
+              position: PopupMenuPosition.under,
+              color: colors.background,
+              style: IconButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
-            ],
+              icon: Icon(Icons.more_vert, color: colors.textHint),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'details',
+                  child: Text('Open channel details'),
+                ),
+                const PopupMenuItem(
+                  value: 'notifications',
+                  child: Text('Notification Settings'),
+                ),
+                const PopupMenuItem(value: 'export', child: Text('Export')),
+                const PopupMenuItem(value: 'search', child: Text('Search')),
+                PopupMenuItem(
+                  value: 'leave',
+                  child: Text(
+                    'Leave channel',
+                    style: TextStyle(color: colors.error),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
