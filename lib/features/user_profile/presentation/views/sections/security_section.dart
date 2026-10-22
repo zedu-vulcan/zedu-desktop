@@ -48,6 +48,34 @@ class _SessionsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (sessions.isEmpty) {
+      final colors = context.colors;
+      final textTheme = Theme.of(context).textTheme;
+      return ProfileCard(
+        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.devices_outlined,
+                size: 40,
+                color: colors.textSecondary.withValues(alpha: 0.6),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'No active sessions found',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return ProfileCard(
       padding: EdgeInsets.zero,
       child: SingleChildScrollView(
