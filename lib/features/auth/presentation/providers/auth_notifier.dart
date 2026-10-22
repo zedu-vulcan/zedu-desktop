@@ -25,6 +25,22 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> _restoreSession() async {
+    try {
+      await _restoreStoredSession();
+    } catch (e, st) {
+      // e.g. a locked or missing Linux keyring. Without this the status stays
+      // `unknown` and the login screen shows a spinner forever.
+      AppLogger.e(
+        'Could not read stored session — unauthenticated',
+        tag: _tag,
+        error: e,
+        stackTrace: st,
+      );
+      state = const AuthState(status: AuthStatus.unauthenticated);
+    }
+  }
+
+  Future<void> _restoreStoredSession() async {
     AppLogger.d('Restoring session from storage', tag: _tag);
     if (await _storage.isSessionOnly()) {
       AppLogger.i('Session was not remembered — clearing token', tag: _tag);

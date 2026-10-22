@@ -8,12 +8,19 @@ class MockAuthRepository extends Mock implements AuthRepository {}
 class FakeSecureStorageService extends SecureStorageService {
   final values = <String, String>{};
 
+  // Set to make reads fail like a locked or missing system keyring.
+  Object? readError;
+  Object? sessionFlagError;
+
   @override
   Future<void> saveAccessToken(String token) async =>
       values['access_token'] = token;
 
   @override
-  Future<String?> getAccessToken() async => values['access_token'];
+  Future<String?> getAccessToken() async {
+    if (readError != null) throw readError!;
+    return values['access_token'];
+  }
 
   @override
   Future<void> deleteAccessToken() async => values.remove('access_token');
@@ -24,7 +31,10 @@ class FakeSecureStorageService extends SecureStorageService {
       : values.remove('session_only');
 
   @override
-  Future<bool> isSessionOnly() async => values['session_only'] == 'true';
+  Future<bool> isSessionOnly() async {
+    if (sessionFlagError != null) throw sessionFlagError!;
+    return values['session_only'] == 'true';
+  }
 }
 
 final _user = User(
@@ -99,6 +109,30 @@ void main() {
       AuthStatus.authenticated,
     );
   }
+
+  group('AuthNotifier unreadable storage', () {
+    test('ends unauthenticated when reading the token throws', () async {
+      storage.readError = PlatformException(code: 'KeyringLocked');
+
+      final container = await launchApp();
+
+      expect(
+        container.read(authNotifierProvider).status,
+        AuthStatus.unauthenticated,
+      );
+    });
+
+    test('ends unauthenticated when the session flag cannot be read', () async {
+      storage.sessionFlagError = PlatformException(code: 'KeyringLocked');
+
+      final container = await launchApp();
+
+      expect(
+        container.read(authNotifierProvider).status,
+        AuthStatus.unauthenticated,
+      );
+    });
+  });
 
   group('AuthNotifier remember me', () {
     test('restores the session on next launch when ticked', () async {
