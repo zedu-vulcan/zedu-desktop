@@ -88,17 +88,15 @@ class DmRepository {
       'path': file.path,
       if (file.mimeType != null) 'mime_type': file.mimeType,
     };
-  }
-
-  Future<void> editMessage(
-    String channelId, {
-    required String content,
-    String? threadId,
-    List<Map<String, dynamic>>? media,
-    List<Map<String, dynamic>>? mentions,
-  }) async {
-    await _apiClient.put<Map<String, dynamic>>(
-      path: '/dms/messages/$channelId',
+  }  Future<void> editMessage(
+    String messageId, {
+      required String content,
+      String? threadId,
+      List<Map<String, dynamic>>? media,
+      List<Map<String, dynamic>>? mentions,
+    }) async {
+      await _apiClient.put<Map<String, dynamic>>(
+        path: '/dms/messages/$messageId',
       data: {
         'content': content,
         ...?(threadId != null ? {'thread_id': threadId} : null),
