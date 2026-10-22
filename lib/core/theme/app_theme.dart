@@ -1,4 +1,6 @@
-import 'package:zedu/core/core.dart';
+import 'package:flutter/material.dart';
+import 'package:zedu/core/theme/app_palette.dart';
+import 'package:zedu/core/theme/app_typography.dart';
 
 abstract final class AppTheme {
   static const _buttonRadius = 6.0;
@@ -19,6 +21,7 @@ abstract final class AppTheme {
   );
 
   static final ThemeData light = _build(AppPalette.light, Brightness.light);
+  static final ThemeData dark = _build(AppPalette.dark, Brightness.dark);
 
   static ThemeData _build(AppPalette palette, Brightness brightness) {
     return ThemeData(
