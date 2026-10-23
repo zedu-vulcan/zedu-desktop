@@ -52,6 +52,38 @@ Widget buildHomeViewUnderTest() {
 }
 
 void main() {
+  testWidgets('channel header ellipsis opens its action menu', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(buildHomeViewUnderTest());
+    await tester.pumpAndSettle();
+
+    final menuFinder = find.ancestor(
+      of: find.byTooltip('More options'),
+      matching: find.byType(PopupMenuButton<String>),
+    );
+    expect(menuFinder, findsOneWidget);
+    expect(
+      tester.widget<PopupMenuButton<String>>(menuFinder).tooltip,
+      'More options',
+    );
+
+    await tester.tap(find.byTooltip('More options'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open channel details'), findsOneWidget);
+    expect(find.text('Notification Settings'), findsOneWidget);
+    expect(find.text('Export'), findsOneWidget);
+    expect(find.text('Search'), findsOneWidget);
+    expect(find.text('Leave channel'), findsOneWidget);
+
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open channel details'), findsNothing);
+  });
+
   group('HomeView View all channels navigation', () {
     testWidgets(
       'clicking View all channels in sidebar opens channel directory and selecting channel switches back',
