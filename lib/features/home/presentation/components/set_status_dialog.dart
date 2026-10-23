@@ -137,26 +137,30 @@ class _SetStatusDialogState extends ConsumerState<SetStatusDialog> {
                 child: Row(
                   children: [
                     // Emoji picker trigger
-                    InkWell(
-                      onTap: _pickEmoji,
-                      borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(8),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                    Semantics(
+                      label: 'Choose status emoji',
+                      button: true,
+                      child: InkWell(
+                        onTap: _pickEmoji,
+                        borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(8),
                         ),
-                        child: _selectedEmoji != null
-                            ? Text(
-                                _selectedEmoji!,
-                                style: const TextStyle(fontSize: 20),
-                              )
-                            : Icon(
-                                Icons.sentiment_satisfied_alt_outlined,
-                                color: colors.textHint,
-                                size: 22,
-                              ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: _selectedEmoji != null
+                              ? Text(
+                                  _selectedEmoji!,
+                                  style: const TextStyle(fontSize: 20),
+                                )
+                              : Icon(
+                                  Icons.sentiment_satisfied_alt_outlined,
+                                  color: colors.textHint,
+                                  size: 22,
+                                ),
+                        ),
                       ),
                     ),
                     Container(
