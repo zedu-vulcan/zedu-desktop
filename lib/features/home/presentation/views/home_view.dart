@@ -1,4 +1,3 @@
-
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -186,8 +185,7 @@ class _ChatAreaSwitcher extends ConsumerWidget {
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF47459D)
-                          .withValues(alpha: 0.10),
+                      color: const Color(0xFF47459D).withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(28),
                     ),
                     child: const Icon(
@@ -640,7 +638,48 @@ class _ChatArea extends StatelessWidget {
             child: Icon(Icons.person, size: 18, color: colors.onPrimary),
           ),
           const SizedBox(width: 8),
-          Icon(Icons.more_vert, color: colors.textHint),
+          PopupMenuButton<String>(
+            tooltip: 'More options',
+            position: PopupMenuPosition.under,
+            icon: Icon(Icons.more_vert, color: colors.textHint),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'details',
+                child: Text(
+                  'Open channel details',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'notifications',
+                child: Text(
+                  'Notification Settings',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                child: Text(
+                  'Export',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'search',
+                child: Text(
+                  'Search',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'leave',
+                child: Text(
+                  'Leave channel',
+                  style: TextStyle(color: colors.error),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
