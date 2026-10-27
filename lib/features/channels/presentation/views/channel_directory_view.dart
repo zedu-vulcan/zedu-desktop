@@ -68,9 +68,11 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
           _buildTabBar(colors, textTheme),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (val) => setState(() => _searchQuery = val),
+              child: TextField(
+               controller: _searchController,
+               // Trim surrounding spaces as the user types so the internal
+               // search query never contains leading or trailing whitespace.
+               onChanged: (val) => setState(() => _searchQuery = val.trim()),
               decoration: InputDecoration(
                 hintText: 'Search for channels',
                 hintStyle: textTheme.bodyMedium?.copyWith(
