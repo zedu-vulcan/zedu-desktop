@@ -21,8 +21,58 @@ void main() {
       expect(token, 'abc123');
     });
 
+    test('extracts token from standard web email magic link', () {
+      final uri = Uri.parse(
+        'https://zedu.chat/auth/login/magic-link?token=emailToken789',
+      );
+
+      final token = MagicLinkDeepLinkParser.extractToken(uri);
+
+      expect(token, 'emailToken789');
+    });
+
+    test('extracts token from web magic link with trailing slash', () {
+      final uri = Uri.parse(
+        'https://zedu.chat/auth/login/magic-link/?token=emailToken789',
+      );
+
+      final token = MagicLinkDeepLinkParser.extractToken(uri);
+
+      expect(token, 'emailToken789');
+    });
+
+    test('extracts token from web /auth/magiclink link', () {
+      final uri = Uri.parse(
+        'https://staging.zedu.chat/auth/magiclink?token=magic456',
+      );
+
+      final token = MagicLinkDeepLinkParser.extractToken(uri);
+
+      expect(token, 'magic456');
+    });
+
+    test('extracts token from custom scheme web login magic-link route', () {
+      final uri = Uri.parse(
+        'zedu://auth/login/magic-link?token=customScheme123',
+      );
+
+      final token = MagicLinkDeepLinkParser.extractToken(uri);
+
+      expect(token, 'customScheme123');
+    });
+
     test('returns null for missing token query parameter', () {
       final uri = Uri.parse('zedu://auth/magick-link/verify');
+
+      final token = MagicLinkDeepLinkParser.extractToken(uri);
+
+      expect(token, isNull);
+    });
+
+    test('returns null for empty token query parameter', () {
+      final uri = Uri.parse(
+        'https://zedu.chat/auth/login/magic-link?token=   ',
+      );
 
       final token = MagicLinkDeepLinkParser.extractToken(uri);
 
