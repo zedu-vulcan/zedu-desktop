@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -56,60 +58,65 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                       );
                       final messages = historyState.messages;
 
-                      return NotificationListener<ScrollNotification>(
-                        onNotification: (ScrollNotification scrollInfo) {
-                          if (!historyState.isLoading &&
-                              historyState.hasMore &&
-                              scrollInfo.metrics.pixels >=
-                                  scrollInfo.metrics.maxScrollExtent * 0.8) {
-                            ref
-                                .read(
-                                  chatHistoryProvider(
-                                    widget.conversation.channelId,
-                                  ),
-                                )
-                                .loadMore();
-                          }
-                          return false;
-                        },
-                        child: CustomScrollView(
-                          reverse: true,
-                          slivers: [
-                            SliverPadding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 16,
+                      // SelectionArea makes every Text.rich descendant
+                      // (see _CopyableBubble) selectable and copyable with
+                      // the standard drag-select / Ctrl+C affordances.
+                      return SelectionArea(
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (ScrollNotification scrollInfo) {
+                            if (!historyState.isLoading &&
+                                historyState.hasMore &&
+                                scrollInfo.metrics.pixels >=
+                                    scrollInfo.metrics.maxScrollExtent * 0.8) {
+                              ref
+                                  .read(
+                                    chatHistoryProvider(
+                                      widget.conversation.channelId,
+                                    ),
+                                  )
+                                  .loadMore();
+                            }
+                            return false;
+                          },
+                          child: CustomScrollView(
+                            reverse: true,
+                            slivers: [
+                              SliverPadding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 16,
+                                ),
+                                sliver: SliverList(
+                                  delegate: SliverChildBuilderDelegate((
+                                    context,
+                                    index,
+                                  ) {
+                                    final msg = messages[index];
+                                    return _MessageBubble(
+                                      message: msg,
+                                      conversation: widget.conversation,
+                                      channelId: widget.conversation.channelId,
+                                    );
+                                  }, childCount: messages.length),
+                                ),
                               ),
-                              sliver: SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final msg = messages[index];
-                                  return _MessageBubble(
-                                    message: msg,
+                              if (historyState.isLoading)
+                                const SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                ),
+                              if (!historyState.hasMore)
+                                SliverToBoxAdapter(
+                                  child: DmProfileCard(
                                     conversation: widget.conversation,
-                                    channelId: widget.conversation.channelId,
-                                  );
-                                }, childCount: messages.length),
-                              ),
-                            ),
-                            if (historyState.isLoading)
-                              const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 16),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
                                   ),
                                 ),
-                              ),
-                            if (!historyState.hasMore)
-                              SliverToBoxAdapter(
-                                child: DmProfileCard(
-                                  conversation: widget.conversation,
-                                ),
-                              ),
-                          ],
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -555,26 +562,19 @@ class _MessageBubble extends ConsumerWidget {
                   ),
                 ),
                 if (content.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isMe
-                          ? colors.primary
-                          : colors.onPrimary.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: RichText(
-                      text: _parseRichText(
-                        content,
-                        TextStyle(
-                          color: isMe ? Colors.white : colors.textPrimary,
-                          fontSize: 14,
-                        ),
+                  _CopyableBubble(
+                    content: content,
+                    isMe: isMe,
+                    richTextSpans: _parseRichText(
+                      content,
+                      TextStyle(
+                        color: isMe ? Colors.white : colors.textPrimary,
+                        fontSize: 14,
                       ),
                     ),
+                    bubbleColor: isMe
+                        ? colors.primary
+                        : colors.onPrimary.withValues(alpha: 0.05),
                   ),
                 if (media.isNotEmpty)
                   Padding(
@@ -752,6 +752,166 @@ class _AttachmentBubbleList extends StatelessWidget {
 
         return _buildGenericFile(fileName, fileLink, isImage, context);
       }).toList(),
+    );
+  }
+}
+
+/// A DM message bubble with copy affordances.
+///
+/// Implements the desktop marketing ticket
+/// "[Marketing/Feature] Add Copy to DM messages on Desktop
+/// (hover button, right-click menu, text selection)" (zeduchat/zedu-fe#657):
+/// - Hovering reveals a small Copy button over the bubble's top corner.
+/// - Right-clicking the bubble opens a context menu with Copy.
+/// - The bubble text is rendered with Text.rich, which registers with the
+///   ambient SelectionArea (see _DmChatAreaState.build), so message text can
+///   be drag-selected and copied with Ctrl+C / Cmd+C like on the web client.
+class _CopyableBubble extends StatefulWidget {
+  final String content;
+  final bool isMe;
+  final TextSpan richTextSpans;
+  final Color bubbleColor;
+
+  const _CopyableBubble({
+    required this.content,
+    required this.isMe,
+    required this.richTextSpans,
+    required this.bubbleColor,
+  });
+
+  @override
+  State<_CopyableBubble> createState() => _CopyableBubbleState();
+}
+
+class _CopyableBubbleState extends State<_CopyableBubble> {
+  bool _hovering = false;
+  bool _copied = false;
+  Timer? _copiedResetTimer;
+
+  @override
+  void dispose() {
+    _copiedResetTimer?.cancel();
+    super.dispose();
+  }
+
+  void _copyMessage() {
+    Clipboard.setData(ClipboardData(text: widget.content));
+    _copiedResetTimer?.cancel();
+    setState(() => _copied = true);
+    _copiedResetTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  Future<void> _showContextMenu(Offset globalPosition) async {
+    final overlayRenderBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayRenderBox == null) return;
+    final overlayTopLeft = overlayRenderBox.localToGlobal(Offset.zero);
+
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx - overlayTopLeft.dx,
+        globalPosition.dy - overlayTopLeft.dy,
+        globalPosition.dx - overlayTopLeft.dx + 1,
+        globalPosition.dy - overlayTopLeft.dy + 1,
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'copy',
+          height: 40,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.copy, size: 16),
+              SizedBox(width: 10),
+              Text('Copy'),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted) return; // the widget can be disposed while the menu is open
+    if (action == 'copy') _copyMessage();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) {
+        _copiedResetTimer?.cancel();
+        setState(() {
+          _hovering = false;
+          _copied = false;
+        });
+      },
+      child: GestureDetector(
+        onSecondaryTapUp: (details) =>
+            _showContextMenu(details.globalPosition),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: widget.bubbleColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text.rich(
+                widget.richTextSpans,
+                textScaler: TextScaler.noScaling,
+              ),
+            ),
+            // Hover action: Copy button stacked over the bubble's top corner
+            // nearest the avatar side, so it never sits over the sender name.
+            if (_hovering)
+              Positioned(
+                top: -14,
+                right: widget.isMe ? null : 8,
+                left: widget.isMe ? 8 : null,
+                child: Material(
+                  color: colors.onPrimary,
+                  borderRadius: BorderRadius.circular(6),
+                  elevation: 2,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: _copyMessage,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _copied ? Icons.check : Icons.copy,
+                            size: 14,
+                            color: _copied ? Colors.green : colors.textPrimary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _copied ? 'Copied' : 'Copy',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _copied
+                                  ? Colors.green
+                                  : colors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
