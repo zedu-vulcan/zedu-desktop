@@ -510,15 +510,16 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
-              color: colors.textHint,
+              color: colors.textPrimary,
             ),
           ),
           Expanded(
             child: TextField(
               controller: _searchController,
               focusNode: _focusNode,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: '#a-channel, @somebody, or somebody',
+                hintStyle: TextStyle(color: colors.textHint), 
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 8),
