@@ -185,8 +185,7 @@ class _SettingsNavigation extends ConsumerWidget {
               icon: Icons.notifications_none,
               label: 'Notifications',
               selected: selectedSection == UserProfileSection.notifications,
-              onTap: () =>
-                  onSectionSelected(UserProfileSection.notifications),
+              onTap: () => onSectionSelected(UserProfileSection.notifications),
             ),
             _NavigationTile(
               icon: Icons.lock_outline,
@@ -199,9 +198,8 @@ class _SettingsNavigation extends ConsumerWidget {
           _NavigationGroupLabel(
             label: 'Organization',
             isExpanded: navState.organizationExpanded,
-            onTap: () => ref
-                .read(navigationGroupProvider.notifier)
-                .toggleOrganization(),
+            onTap: () =>
+                ref.read(navigationGroupProvider.notifier).toggleOrganization(),
           ),
           if (navState.organizationExpanded) ...[
             _NavigationTile(
@@ -214,8 +212,7 @@ class _SettingsNavigation extends ConsumerWidget {
               icon: Icons.groups_outlined,
               label: 'User management',
               selected: selectedSection == UserProfileSection.userManagement,
-              onTap: () =>
-                  onSectionSelected(UserProfileSection.userManagement),
+              onTap: () => onSectionSelected(UserProfileSection.userManagement),
             ),
             _NavigationTile(
               icon: Icons.person_outline,

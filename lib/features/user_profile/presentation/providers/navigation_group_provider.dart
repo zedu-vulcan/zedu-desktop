@@ -22,8 +22,8 @@ class NavigationGroupState {
 
 final navigationGroupProvider =
     NotifierProvider<NavigationGroupNotifier, NavigationGroupState>(
-  NavigationGroupNotifier.new,
-);
+      NavigationGroupNotifier.new,
+    );
 
 class NavigationGroupNotifier extends Notifier<NavigationGroupState> {
   @override

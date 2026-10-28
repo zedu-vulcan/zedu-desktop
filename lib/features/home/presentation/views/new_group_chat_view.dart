@@ -519,7 +519,7 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
               focusNode: _focusNode,
               decoration: InputDecoration(
                 hintText: '#a-channel, @somebody, or somebody',
-                hintStyle: TextStyle(color: colors.textHint), 
+                hintStyle: TextStyle(color: colors.textHint),
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.symmetric(vertical: 8),
