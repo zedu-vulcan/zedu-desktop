@@ -24,11 +24,13 @@ class UserManagementSection extends StatefulWidget {
 
 class _UserManagementSectionState extends State<UserManagementSection> {
   final _searchController = TextEditingController();
+  final _tableScrollController = ScrollController();
   String _roleFilter = 'All Roles';
 
   @override
   void dispose() {
     _searchController.dispose();
+    _tableScrollController.dispose();
     super.dispose();
   }
 
@@ -122,58 +124,71 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                   ],
                 ),
               ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: 880,
-                  child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(
-                      const Color(0xFFFAFAFA),
-                    ),
-                    columns: const [
-                      DataColumn(label: Text('Email Address')),
-                      DataColumn(label: Text('Role')),
-                      DataColumn(label: Text('Date Joined')),
-                      DataColumn(label: Text('Status')),
-                      DataColumn(label: Text('Actions')),
-                    ],
-                    rows: filtered.map((member) {
-                      return DataRow(
-                        cells: [
-                          DataCell(_MemberIdentity(email: member.email)),
-                          DataCell(Text(member.role)),
-                          DataCell(Text(member.dateJoined)),
-                          DataCell(
-                            ProfileStatusPill(status: member.status.name),
+              LayoutBuilder(
+                builder: (_, constraints) => Scrollbar(
+                  controller: _tableScrollController,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _tableScrollController,
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: DataTable(
+                          headingRowColor: WidgetStateProperty.all(
+                            const Color(0xFFFAFAFA),
                           ),
-                          DataCell(
-                            Row(
-                              children: [
-                                SquareIconButton(
-                                  icon: Icons.edit_outlined,
-                                  size: 28,
-                                  onTap: () => _showMemberDialog(
-                                    context,
-                                    member,
-                                    widget.onUpdate,
-                                  ),
+                          columns: const [
+                            DataColumn(label: Text('Email Address')),
+                            DataColumn(label: Text('Role')),
+                            DataColumn(label: Text('Date Joined')),
+                            DataColumn(label: Text('Status')),
+                            DataColumn(label: Text('Actions')),
+                          ],
+                          rows: filtered.map((member) {
+                            return DataRow(
+                              cells: [
+                                DataCell(_MemberIdentity(email: member.email)),
+                                DataCell(Text(member.role)),
+                                DataCell(Text(member.dateJoined)),
+                                DataCell(
+                                  ProfileStatusPill(status: member.status.name),
                                 ),
-                                const SizedBox(width: 8),
-                                SquareIconButton(
-                                  icon: Icons.delete_outline,
-                                  size: 28,
-                                  onTap: () => _confirmRemove(
-                                    context,
-                                    member.email,
-                                    () async => widget.onRemove(member.id),
+                                DataCell(
+                                  Row(
+                                    children: [
+                                      SquareIconButton(
+                                        icon: Icons.edit_outlined,
+                                        size: 28,
+                                        onTap: () => _showMemberDialog(
+                                          context,
+                                          member,
+                                          widget.onUpdate,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      SquareIconButton(
+                                        icon: Icons.delete_outline,
+                                        size: 28,
+                                        onTap: () => _confirmRemove(
+                                          context,
+                                          member.email,
+                                          () async =>
+                                              widget.onRemove(member.id),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
