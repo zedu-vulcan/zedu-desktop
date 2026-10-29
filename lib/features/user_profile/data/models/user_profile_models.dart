@@ -16,15 +16,22 @@ class ProfileAccountModel extends ProfileAccount {
 
   factory ProfileAccountModel.fromJson(Map<String, dynamic> json) {
     return ProfileAccountModel(
-      name: json['name'] as String? ?? 'Anonymous user',
+      name:
+          json['full_name'] as String? ??
+          json['name'] as String? ??
+          'Anonymous user',
       email: json['email'] as String? ?? 'anonymoususer@email.com',
       timezone: json['timezone'] as String? ?? 'Africa/Lagos',
       avatarUrl: json['avatar_url'] as String?,
       displayName: json['display_name'] as String? ?? '',
       username: json['username'] as String? ?? '',
-      phoneNumber: json['phone_number'] as String? ?? '',
+      phoneNumber:
+          json['phone'] as String? ?? json['phone_number'] as String? ?? '',
       title: json['title'] as String? ?? '',
-      namePronunciation: json['name_pronunciation'] as String? ?? '',
+      namePronunciation:
+          json['name_pronounciation'] as String? ??
+          json['name_pronunciation'] as String? ??
+          '',
       country: json['country'] as String? ?? '',
     );
   }
