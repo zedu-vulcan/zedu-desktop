@@ -46,7 +46,6 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   String? _draftChannelId;
 
   Timer? _draftSaveDebounce;
-  bool _isSending = false;
 
   @override
   void initState() {
@@ -192,44 +191,29 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
-  Future<void> _handleSend() async {
-    if (_isSending) return;
+  void _handleSend() {
     final text = _controller.text.trim();
     if (text.isEmpty && _pendingFiles.isEmpty) return;
 
-    _isSending = true;
-    try {
-      if (_isEditMode && _editingMessageId != null) {
-        await ref
-            .read(chatHistoryProvider(widget.channelId))
-            .saveEdit(_editingMessageId!, text);
-        _exitEditMode();
-      } else {
-        await ref
-            .read(chatHistoryProvider(widget.channelId))
-            .sendMessage(text, media: List<XFile>.of(_pendingFiles));
-        widget.onSend?.call(text);
-      }
-
-      // Success: clear draft and input
-      _draftSaveDebounce?.cancel();
-      ref.read(dmDraftStoreProvider).clear(widget.channelId);
-      _controller.clear();
-      if (mounted) setState(() => _pendingFiles = []);
-    } catch (error) {
-      if (context.mounted) {
-        AppToastService.show(
-          context,
-          type: AppToastType.error,
-          message: 'Failed to send message. Please try again.',
-        );
-      }
-    } finally {
-      if (mounted) {
-        _isSending = false;
-        _focusNode.requestFocus();
-      }
+    if (_isEditMode && _editingMessageId != null) {
+      ref
+          .read(chatHistoryProvider(widget.channelId))
+          .saveEdit(_editingMessageId!, text);
+      _exitEditMode();
+    } else {
+      ref
+          .read(chatHistoryProvider(widget.channelId))
+          .sendMessage(text, media: List<XFile>.of(_pendingFiles));
+      widget.onSend?.call(text);
     }
+
+    // The message is out, so the draft no longer exists.
+    _draftSaveDebounce?.cancel();
+    ref.read(dmDraftStoreProvider).clear(widget.channelId);
+
+    _controller.clear();
+    setState(() => _pendingFiles = []);
+    _focusNode.requestFocus();
   }
 
   void _enterEditMode(String messageId, String content) {
@@ -709,12 +693,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                       ),
                       const Spacer(),
                       GestureDetector(
-                        onTap: _isSending ? null : _handleSend,
+                        onTap: _handleSend,
                         child: Icon(
                           Icons.send_rounded,
-                          color: _isSending
-                              ? colors.textHint.withValues(alpha: 0.35)
-                              : colors.textHint.withValues(alpha: 0.55),
+                          color: colors.textHint.withValues(alpha: 0.55),
                           size: 22,
                         ),
                       ),
