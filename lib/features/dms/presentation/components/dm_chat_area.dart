@@ -26,6 +26,309 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
     return '@${parts.first}_${parts.last}';
   }
 
+  Future<void> _handleMenuAction(String action) async {
+    final conversation = widget.conversation;
+    switch (action) {
+      case 'view_profile':
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(conversation.displayName),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (conversation.participantEmail?.isNotEmpty == true)
+                  Text(conversation.participantEmail!),
+                Text('User ID: ${conversation.participantId}'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      case 'mute_notifications':
+        final settings = ref.read(notificationSettingsProvider);
+        final notifier = ref.read(notificationSettingsProvider.notifier);
+        if (settings.isMuted(conversation.participantId)) {
+          notifier.unmuteParticipant(conversation.participantId);
+        } else {
+          notifier.muteParticipant(conversation.participantId);
+        }
+      case 'pin_conversation':
+        ref
+            .read(dmConversationActionsProvider.notifier)
+            .togglePinned(conversation.channelId);
+      case 'search_in_conversation':
+        await _showConversationSearch();
+      case 'pinned_messages':
+        await _showPinnedMessages();
+      case 'view_files':
+        await _showConversationFiles();
+      case 'clear_history':
+        final confirmed = await _confirmConversationAction(
+          title: 'Clear history?',
+          message:
+              'Clear the loaded message history for ${conversation.displayName}?',
+          confirmLabel: 'Clear history',
+        );
+        if (confirmed && mounted) {
+          ref
+              .read(chatHistoryProvider(conversation.channelId))
+              .clearLocalHistory();
+          _showActionNotice('Loaded history cleared locally.');
+        }
+      case 'block_user':
+        final confirmed = await _confirmConversationAction(
+          title: 'Block ${conversation.displayName}?',
+          message:
+              'This will hide the conversation from your DM list on this device.',
+          confirmLabel: 'Block User',
+          destructive: true,
+        );
+        if (confirmed && mounted) {
+          ref
+              .read(dmConversationActionsProvider.notifier)
+              .block(conversation.channelId);
+          ref.read(selectedDmProvider.notifier).select(null);
+        }
+      case 'delete_conversation':
+        final confirmed = await _confirmConversationAction(
+          title: 'Delete conversation?',
+          message:
+              'This will remove the conversation from your DM list on this device.',
+          confirmLabel: 'Delete conversation',
+          destructive: true,
+        );
+        if (confirmed && mounted) {
+          ref
+              .read(dmConversationActionsProvider.notifier)
+              .delete(conversation.channelId);
+          ref.read(selectedDmProvider.notifier).select(null);
+        }
+    }
+  }
+
+  Future<bool> _confirmConversationAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    bool destructive = false,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: destructive
+                    ? TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFD93025),
+                      )
+                    : null,
+                child: Text(confirmLabel),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _showConversationSearch() async {
+    final history = ref.read(
+      chatHistoryProvider(widget.conversation.channelId),
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final query = controller.text.toLowerCase();
+            final results = history.messages.where(
+              (message) => (message['content']?.toString() ?? '')
+                  .toLowerCase()
+                  .contains(query),
+            );
+            return AlertDialog(
+              title: Text('Search ${widget.conversation.displayName}'),
+              content: SizedBox(
+                width: 420,
+                height: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Search messages',
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: query.isEmpty
+                            ? const [Text('Enter a search term')]
+                            : results
+                                  .map(
+                                    (message) => ListTile(
+                                      dense: true,
+                                      title: Text(
+                                        message['content']?.toString() ?? '',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showConversationFiles() async {
+    final history = ref.read(
+      chatHistoryProvider(widget.conversation.channelId),
+    );
+    final files = history.messages
+        .expand((message) => (message['media'] as List<dynamic>?) ?? const [])
+        .toList();
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${widget.conversation.displayName} files'),
+        content: SizedBox(
+          width: 420,
+          child: files.isEmpty
+              ? const Text('No files in the loaded conversation history.')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: files.length,
+                  itemBuilder: (context, index) {
+                    final file = files[index] as Map;
+                    return ListTile(
+                      leading: const Icon(Icons.insert_drive_file_outlined),
+                      title: Text(
+                        file['file_name']?.toString() ?? 'Attachment',
+                      ),
+                      subtitle: Text(file['file_type']?.toString() ?? ''),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPinnedMessages() async {
+    final channelId = widget.conversation.channelId;
+    final future = ref.read(dmRepositoryProvider).getPinnedMessages(channelId);
+    final history = ref.read(chatHistoryProvider(channelId));
+    final localPinned = history.messages
+        .where((m) => m['is_pinned'] == true || m['pinned'] == true)
+        .toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${widget.conversation.displayName} pinned messages'),
+        content: SizedBox(
+          width: 420,
+          height: 320,
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final remotePins = snapshot.data ?? const [];
+              final allPins = <Map<String, dynamic>>[
+                ...remotePins,
+                ...localPinned,
+              ];
+              if (allPins.isEmpty) {
+                return const Center(
+                  child: Text('No pinned messages in this conversation.'),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                itemCount: allPins.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = allPins[index];
+                  final rawText = (item['message'] ?? item['content'] ?? '')
+                      .toString();
+                  final cleanText = rawText
+                      .replaceAll(RegExp(r'<[^>]*>'), '')
+                      .trim();
+                  final sender =
+                      (item['username'] ??
+                              item['full_name'] ??
+                              widget.conversation.displayName)
+                          .toString();
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.push_pin_outlined, size: 18),
+                    title: Text(
+                      sender,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      cleanText.isEmpty ? 'Pinned message' : cleanText,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showActionNotice(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -47,7 +350,10 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
           children: [
             Column(
               children: [
-                _DmChatHeader(conversation: widget.conversation),
+                _DmChatHeader(
+                  conversation: widget.conversation,
+                  onMenuAction: _handleMenuAction,
+                ),
                 Expanded(
                   child: Consumer(
                     builder: (context, ref, child) {
@@ -260,8 +566,9 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
 
 class _DmChatHeader extends StatelessWidget {
   final DmConversation conversation;
+  final ValueChanged<String> onMenuAction;
 
-  const _DmChatHeader({required this.conversation});
+  const _DmChatHeader({required this.conversation, required this.onMenuAction});
 
   @override
   Widget build(BuildContext context) {
@@ -305,35 +612,42 @@ class _DmChatHeader extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          Consumer(
-            builder: (context, ref, child) {
-              return IconButton(
-                icon: const Icon(Icons.notifications_active_outlined),
-                tooltip: 'Test Notification (Delayed 5s)',
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Notification will fire in 5 seconds. Minimize the app now!',
-                      ),
-                    ),
-                  );
-                  Future.delayed(const Duration(seconds: 5), () {
-                    ref
-                        .read(notificationServiceProvider)
-                        .handleIncomingMessage(
-                          {
-                            'user_id': conversation.participantId,
-                            'content': 'Hello! This is a test DM notification.',
-                          },
-                          conversation.channelId,
-                          conversation.displayName,
-                          forceShow: true,
-                        );
-                  });
-                },
-              );
-            },
+          Tooltip(
+            message: 'Search',
+            child: InkWell(
+              onTap: () => onMenuAction('search_in_conversation'),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.divider),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.search, size: 18, color: colors.textPrimary),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Pinned messages',
+            child: InkWell(
+              onTap: () => onMenuAction('pinned_messages'),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.divider),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  Icons.push_pin_outlined,
+                  size: 18,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           Consumer(
@@ -367,7 +681,78 @@ class _DmChatHeader extends StatelessWidget {
             },
           ),
           const SizedBox(width: 12),
-          Icon(Icons.more_vert, color: colors.textHint),
+          PopupMenuButton<String>(
+            tooltip: 'More options',
+            position: PopupMenuPosition.under,
+            icon: Icon(Icons.more_vert, color: colors.textHint),
+            onSelected: onMenuAction,
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'view_profile',
+                child: Text(
+                  'View profile',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'mute_notifications',
+                child: Text(
+                  'Mute notifications',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'pin_conversation',
+                child: Text(
+                  'Pin conversation',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'pinned_messages',
+                child: Text(
+                  'Pinned messages',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'search_in_conversation',
+                child: Text(
+                  'Search in conversation',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'view_files',
+                child: Text(
+                  'View files',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'clear_history',
+                child: Text(
+                  'Clear history',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'block_user',
+                child: Text(
+                  'Block User',
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete_conversation',
+                child: Text(
+                  'Delete conversation',
+                  style: TextStyle(color: Color(0xFFD93025)),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -385,21 +770,34 @@ class _MessageBubble extends ConsumerWidget {
     required this.channelId,
   });
 
-  TextSpan _parseRichText(String text, TextStyle defaultStyle) {
+  TextSpan _parseRichText(
+    String text,
+    TextStyle defaultStyle, {
+    required Color dividerColor,
+  }) {
     if (text.isEmpty) return TextSpan(style: defaultStyle, text: '');
+
+    // A line holding only `---` (what the composer's Divider button inserts).
+    final dividerRegex = RegExp(r'(?<=^|\n)---(?=\n|$)');
 
     final boldRegex = RegExp(r'\*\*(.*?)\*\*', dotAll: true);
     final italicRegex = RegExp(r'(?<!\*)\*(.*?)\*(?!\*)', dotAll: true);
     final strikeRegex = RegExp(r'~~(.*?)~~', dotAll: true);
     final codeRegex = RegExp(r'`(.*?)`', dotAll: true);
 
-    final allPatterns = [boldRegex, italicRegex, strikeRegex, codeRegex];
+    final allPatterns = [
+      dividerRegex,
+      boldRegex,
+      italicRegex,
+      strikeRegex,
+      codeRegex,
+    ];
     final combined = RegExp(
       allPatterns.map((r) => r.pattern).join('|'),
       dotAll: true,
     );
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     int lastEnd = 0;
 
     for (final match in combined.allMatches(text)) {
@@ -413,7 +811,19 @@ class _MessageBubble extends ConsumerWidget {
       }
 
       final raw = match.group(0)!;
-      if (boldRegex.hasMatch(raw)) {
+      if (dividerRegex.hasMatch(raw)) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              width: double.infinity,
+              height: 1,
+              margin: const EdgeInsets.symmetric(vertical: 6),
+              color: dividerColor,
+            ),
+          ),
+        );
+      } else if (boldRegex.hasMatch(raw)) {
         final inner =
             match.group(1) ?? boldRegex.firstMatch(raw)?.group(1) ?? raw;
         spans.add(
@@ -573,6 +983,9 @@ class _MessageBubble extends ConsumerWidget {
                           color: isMe ? Colors.white : colors.textPrimary,
                           fontSize: 14,
                         ),
+                        dividerColor: isMe
+                            ? Colors.white.withValues(alpha: 0.6)
+                            : colors.divider,
                       ),
                     ),
                   ),

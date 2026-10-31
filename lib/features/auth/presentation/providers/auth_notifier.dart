@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
@@ -25,6 +26,14 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> _restoreSession() async {
     AppLogger.d('Restoring session from storage', tag: _tag);
+    if (await _storage.isSessionOnly()) {
+      AppLogger.i('Session was not remembered — clearing token', tag: _tag);
+      await _storage.deleteAccessToken();
+      await _storage.setSessionOnly(false);
+      state = const AuthState(status: AuthStatus.unauthenticated);
+      return;
+    }
+
     final token = await _storage.getAccessToken();
     if (token == null) {
       AppLogger.i('No stored token — unauthenticated', tag: _tag);
@@ -44,7 +53,11 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({
+    required String email,
+    required String password,
+    bool rememberMe = true,
+  }) async {
     AppLogger.d('Login attempt — $email', tag: _tag);
     state = state.copyWith(isLoading: true, clearError: true);
 
@@ -52,7 +65,7 @@ class AuthNotifier extends Notifier<AuthState> {
     switch (result) {
       case Success<AuthSession>():
         AppLogger.i('Login succeeded — token persisted', tag: _tag);
-        await _storage.saveAccessToken(result.value.accessToken);
+        await _persistSession(result.value.accessToken, rememberMe: rememberMe);
         state = AuthState(
           status: AuthStatus.authenticated,
           user: result.value.user,
@@ -77,7 +90,7 @@ class AuthNotifier extends Notifier<AuthState> {
           'Magic link verification succeeded — token persisted',
           tag: _tag,
         );
-        await _storage.saveAccessToken(result.value.accessToken);
+        await _persistSession(result.value.accessToken);
         state = AuthState(
           status: AuthStatus.authenticated,
           user: result.value.user,
@@ -94,9 +107,15 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  Future<void> _persistSession(String token, {bool rememberMe = true}) async {
+    await _storage.saveAccessToken(token);
+    await _storage.setSessionOnly(!rememberMe);
+  }
+
   Future<void> logout() async {
     AppLogger.i('Logout — clearing session', tag: _tag);
     await _storage.deleteAccessToken();
+    await _storage.setSessionOnly(false);
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
@@ -256,7 +275,12 @@ class AuthNotifier extends Notifier<AuthState> {
 
       // 3. Wait for Google's redirect containing the authorization code
       String? grantCode;
-      await for (final request in server) {
+      await for (final request in server.timeout(
+        const Duration(seconds: 60),
+        onTimeout: (sink) {
+          sink.addError(TimeoutException('Google Sign-In redirect timed out'));
+        },
+      )) {
         grantCode = request.uri.queryParameters['code'];
 
         // Return a clean success page to the user in their browser
@@ -308,7 +332,7 @@ class AuthNotifier extends Notifier<AuthState> {
       switch (result) {
         case Success<AuthSession>():
           AppLogger.i('Google Sign-In succeeded — token persisted', tag: _tag);
-          await _storage.saveAccessToken(result.value.accessToken);
+          await _persistSession(result.value.accessToken);
           state = AuthState(
             status: AuthStatus.authenticated,
             user: result.value.user,
@@ -323,6 +347,12 @@ class AuthNotifier extends Notifier<AuthState> {
             error: result.error.friendlyMessage,
           );
       }
+    } on TimeoutException {
+      AppLogger.w('Google Sign-In timed out', tag: _tag);
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Google Sign-In timed out. Please try again.',
+      );
     } catch (e) {
       AppLogger.e('Google Sign-In failed', tag: _tag, error: e);
       state = state.copyWith(isLoading: false, error: 'Google Sign-In failed');

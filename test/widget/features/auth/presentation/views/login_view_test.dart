@@ -13,12 +13,18 @@ class FakeAuthNotifier extends AuthNotifier {
 
   final AuthState _initial;
   final void Function(String email, String password)? _onLogin;
+  bool? lastRememberMe;
 
   @override
   AuthState build() => _initial;
 
   @override
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({
+    required String email,
+    required String password,
+    bool rememberMe = true,
+  }) async {
+    lastRememberMe = rememberMe;
     _onLogin?.call(email, password);
   }
 
@@ -49,6 +55,18 @@ void main() {
       expect(find.text('Email address'), findsOneWidget);
       expect(find.text('Password'), findsWidgets);
       expect(find.widgetWithText(ElevatedButton, 'Login'), findsOneWidget);
+    });
+
+    testWidgets('shows sign in wording on the Google and Apple buttons', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildLoginViewUnderTest());
+      await tester.pump();
+
+      expect(find.text('Sign in with Google'), findsOneWidget);
+      expect(find.text('Sign in with Apple'), findsOneWidget);
+      expect(find.text('Sign up with Google'), findsNothing);
+      expect(find.text('Sign up with Apple'), findsNothing);
     });
 
     testWidgets('shows loading spinner when auth status is unknown', (
@@ -120,5 +138,53 @@ void main() {
       expect(capturedEmail, 'user@example.com');
       expect(capturedPassword, 'Secret123');
     });
+
+    testWidgets('Tab moves directly from email to password', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 1024));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(buildLoginViewUnderTest());
+      await tester.pump();
+
+      await tester.tap(find.byType(TextFormField).at(0));
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+
+      final passwordField = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byType(TextFormField).at(1),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(passwordField.focusNode.hasFocus, isTrue);
+    });
+
+    for (final tick in [false, true]) {
+      testWidgets('passes rememberMe: $tick to login', (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1440, 1024));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final notifier = FakeAuthNotifier();
+        await tester.pumpWidget(buildLoginViewUnderTest(notifier: notifier));
+        await tester.pump();
+
+        await tester.enterText(
+          find.byType(TextFormField).at(0),
+          'user@example.com',
+        );
+        await tester.enterText(find.byType(TextFormField).at(1), 'Secret123');
+        if (tick) {
+          await tester.tap(find.byType(Checkbox));
+          await tester.pump();
+        }
+
+        final loginButton = find.widgetWithText(ElevatedButton, 'Login');
+        await tester.ensureVisible(loginButton);
+        await tester.tap(loginButton);
+        await tester.pumpAndSettle();
+
+        expect(notifier.lastRememberMe, tick);
+      });
+    }
   });
 }

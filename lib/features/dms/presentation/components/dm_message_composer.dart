@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -40,15 +42,59 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   List<DmParticipant> _mentionSuggestions = [];
   String _mentionQuery = '';
 
+  /// channelId whose draft this composer instance is currently bound to.
+  String? _draftChannelId;
+
+  Timer? _draftSaveDebounce;
+
   @override
   void initState() {
     super.initState();
     _controller = RichTextController();
     _controller.addListener(_onTextChanged);
+    _draftChannelId = widget.channelId;
+    _restoreDraft();
+  }
+
+  @override
+  void didUpdateWidget(covariant DmMessageComposer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The same composer widget is re-bound when the user switches chats while
+    // the chat area stays mounted. Flush the debounced save for the previous
+    // conversation (the listener may have saved already; this is a no-op then),
+    // then swap to the new conversation and restore its draft if any.
+    if (oldWidget.channelId != widget.channelId) {
+      _draftSaveDebounce?.cancel();
+      final previousChannel = _draftChannelId ?? oldWidget.channelId;
+      final previousText = _controller.text;
+      if (previousText.trim().isNotEmpty) {
+        ref.read(dmDraftStoreProvider).save(previousChannel, previousText);
+      } else {
+        ref.read(dmDraftStoreProvider).clear(previousChannel);
+      }
+      _draftChannelId = widget.channelId;
+
+      setState(() {
+        _pendingFiles = [];
+        _showEmojiPicker = false;
+      });
+      _controller.clear();
+      _restoreDraft();
+    }
   }
 
   @override
   void dispose() {
+    // Flush any un-debounced text synchronously using the last known text.
+    // (The debounced save normally covers this; this is just insurance because
+    // dispose cannot await async work.)
+    _draftSaveDebounce?.cancel();
+    final flushText = _isEditMode ? null : _controller.text;
+    flushText?.trim().isNotEmpty == true
+        ? ref
+              .read(dmDraftStoreProvider)
+              .save(_draftChannelId ?? widget.channelId, flushText!)
+        : null;
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -56,9 +102,29 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     super.dispose();
   }
 
+  Future<void> _restoreDraft() async {
+    final entry = await ref.read(dmDraftStoreProvider).load(widget.channelId);
+    if (!mounted) return;
+    if (entry == null || _controller.text.isNotEmpty) return;
+
+    _controller.value = TextEditingValue(
+      text: entry.text,
+      selection: TextSelection.collapsed(offset: entry.text.length),
+    );
+  }
+
   void _onTextChanged() {
     _updateFormattingState();
     _updateMentionSuggestions();
+
+    if (_isEditMode) return;
+
+    final text = _controller.text;
+    _draftSaveDebounce?.cancel();
+    _draftSaveDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      ref.read(dmDraftStoreProvider).save(widget.channelId, text);
+    });
   }
 
   void _updateFormattingState() {
@@ -140,6 +206,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           .sendMessage(text, media: List<XFile>.of(_pendingFiles));
       widget.onSend?.call(text);
     }
+
+    // The message is out, so the draft no longer exists.
+    _draftSaveDebounce?.cancel();
+    ref.read(dmDraftStoreProvider).clear(widget.channelId);
 
     _controller.clear();
     setState(() => _pendingFiles = []);
@@ -246,6 +316,29 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
   void _insertLink() => _wrapSelection('[', '](url)');
 
+  /// Inserts a divider (`---` on its own line) at the cursor. Any selected
+  /// text is replaced, matching how the other toolbar buttons treat it.
+  void _insertDivider() {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : text.length;
+    final before = text.substring(0, start);
+    final after = text.substring(end);
+    final buffer = StringBuffer();
+    if (before.isNotEmpty && !before.endsWith('\n')) {
+      buffer.write('\n');
+    }
+    buffer.write('---');
+    if (!after.startsWith('\n')) buffer.write('\n');
+    final insert = buffer.toString();
+    _controller.value = TextEditingValue(
+      text: before + insert + after,
+      selection: TextSelection.collapsed(offset: start + insert.length),
+    );
+    _focusNode.requestFocus();
+  }
+
   void _insertQuote() {
     final text = _controller.text;
     final sel = _controller.selection;
@@ -262,6 +355,33 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
+  /// Inserts a Markdown horizontal rule (`---`) on its own line at the cursor.
+  ///
+  /// The rule needs a blank line above it: `text\n---` is a setext heading,
+  /// not a divider.
+  void _insertDivider() {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final pos = sel.isValid ? sel.end : text.length;
+    final before = text.substring(0, pos);
+
+    final String leading;
+    if (before.isEmpty || before.endsWith('\n\n')) {
+      leading = '';
+    } else if (before.endsWith('\n')) {
+      leading = '\n';
+    } else {
+      leading = '\n\n';
+    }
+
+    final insert = '$leading---\n';
+    _controller.value = TextEditingValue(
+      text: before + insert + text.substring(pos),
+      selection: TextSelection.collapsed(offset: pos + insert.length),
+    );
+    _focusNode.requestFocus();
+  }
+
   void _toggleEmojiPicker() {
     setState(() => _showEmojiPicker = !_showEmojiPicker);
   }
@@ -269,11 +389,12 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   void _insertEmoji(String emoji) {
     final text = _controller.text;
     final sel = _controller.selection;
-    final pos = sel.isValid ? sel.baseOffset : text.length;
-    final newText = text.substring(0, pos) + emoji + text.substring(pos);
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : text.length;
+    final newText = text.replaceRange(start, end, emoji);
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: pos + emoji.length),
+      selection: TextSelection.collapsed(offset: start + emoji.length),
     );
     _focusNode.requestFocus();
   }
@@ -560,7 +681,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                       ToolbarButton(
                         icon: Icons.horizontal_rule_rounded,
                         tooltip: 'Divider',
-                        onTap: () => _wrapSelection('/'),
+                        onTap: _insertDivider,
                         colors: colors,
                       ),
                       const SizedBox(width: 4),
