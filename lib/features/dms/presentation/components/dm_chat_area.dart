@@ -1263,8 +1263,7 @@ class _CopyableBubbleState extends State<_CopyableBubble> {
         });
       },
       child: GestureDetector(
-        onSecondaryTapUp: (details) =>
-            _showContextMenu(details.globalPosition),
+        onSecondaryTapUp: (details) => _showContextMenu(details.globalPosition),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -1304,7 +1303,9 @@ class _CopyableBubbleState extends State<_CopyableBubble> {
                           Icon(
                             _copied ? Icons.check : Icons.copy,
                             size: 14,
-                            color: _copied ? Colors.green : colors.textPrimary,
+                            color: _copied
+                                ? colors.success
+                                : colors.textPrimary,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -1312,7 +1313,7 @@ class _CopyableBubbleState extends State<_CopyableBubble> {
                             style: TextStyle(
                               fontSize: 11,
                               color: _copied
-                                  ? Colors.green
+                                  ? colors.success
                                   : colors.textPrimary,
                             ),
                           ),
