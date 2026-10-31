@@ -49,6 +49,8 @@ Future<void> pumpSignUpAt(WidgetTester tester, Size size) async {
     ),
   );
   await tester.pump();
+  // Ensure any fonts, layout or microtask work settles before assertions.
+  await tester.pumpAndSettle();
 }
 
 ScrollPosition signUpScrollPosition(WidgetTester tester) =>
