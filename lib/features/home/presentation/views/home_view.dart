@@ -140,6 +140,26 @@ class _ChatAreaSwitcher extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(homeSidebarProvider);
     final selectedDm = ref.watch(selectedDmProvider);
+    final activeChat = ref.watch(activeChatProvider);
+
+    void leaveNewGroupChat() {
+      if (ref.read(activeChatProvider).type == ActiveChatType.newGroupChat) {
+        ref.read(activeChatProvider.notifier).selectChannel('general');
+      }
+    }
+
+    // Close the New Group Chat page when the user switches sidebar tab or
+    // opens a conversation.
+    ref.listen(homeSidebarProvider, (previous, next) {
+      if (previous != next) leaveNewGroupChat();
+    });
+    ref.listen(selectedDmProvider, (previous, next) {
+      if (next != null) leaveNewGroupChat();
+    });
+
+    if (activeChat.type == ActiveChatType.newGroupChat) {
+      return const NewGroupChatView();
+    }
 
     if (state == HomeSidebarType.dms) {
       if (selectedDm != null) {
