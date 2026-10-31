@@ -580,6 +580,25 @@ class _DmChatHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final menuTextStyle = AppTypography.textTheme.bodyLarge!.copyWith(
+      color: colors.textPrimary,
+    );
+    PopupMenuItem<String> menuItem(
+      String value,
+      String label, {
+      bool destructive = false,
+    }) => PopupMenuItem<String>(
+      value: value,
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Text(
+        label,
+        style: destructive
+            ? menuTextStyle.copyWith(color: colors.error)
+            : menuTextStyle,
+      ),
+    );
+
     final participantInitial = conversation.displayName.trim().isEmpty
         ? '?'
         : conversation.displayName.trim()[0].toUpperCase();
@@ -691,72 +710,42 @@ class _DmChatHeader extends StatelessWidget {
           PopupMenuButton<String>(
             tooltip: 'More options',
             position: PopupMenuPosition.under,
-            icon: Icon(Icons.more_vert, color: colors.textHint),
+            offset: const Offset(0, 8),
+            color: colors.onPrimary,
+            surfaceTintColor: Colors.transparent,
+            elevation: 8,
+            shadowColor: colors.textPrimary.withValues(alpha: 0.16),
+            menuPadding: const EdgeInsets.symmetric(vertical: 4),
+            constraints: const BoxConstraints.tightFor(width: 240),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: colors.divider),
+            ),
+            style: IconButton.styleFrom(
+              backgroundColor: colors.background,
+              foregroundColor: colors.textPrimary,
+              fixedSize: const Size(40, 40),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: colors.divider),
+              ),
+            ),
+            icon: const Icon(Icons.more_vert),
             onSelected: onMenuAction,
             itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'view_profile',
-                child: Text(
-                  'View profile',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'mute_notifications',
-                child: Text(
-                  'Mute notifications',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'pin_conversation',
-                child: Text(
-                  'Pin conversation',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'pinned_messages',
-                child: Text(
-                  'Pinned messages',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'search_in_conversation',
-                child: Text(
-                  'Search in conversation',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'view_files',
-                child: Text(
-                  'View files',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'clear_history',
-                child: Text(
-                  'Clear history',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'block_user',
-                child: Text(
-                  'Block User',
-                  style: TextStyle(color: colors.textPrimary),
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'delete_conversation',
-                child: Text(
-                  'Delete conversation',
-                  style: TextStyle(color: Color(0xFFD93025)),
-                ),
+              menuItem('view_profile', 'View profile'),
+              menuItem('mute_notifications', 'Mute notifications'),
+              menuItem('pin_conversation', 'Pin conversation'),
+              menuItem('pinned_messages', 'Pinned messages'),
+              menuItem('search_in_conversation', 'Search in conversation'),
+              menuItem('view_files', 'View files'),
+              const PopupMenuDivider(height: 1),
+              menuItem('clear_history', 'Clear history'),
+              menuItem('block_user', 'Block User'),
+              menuItem(
+                'delete_conversation',
+                'Delete conversation',
+                destructive: true,
               ),
             ],
           ),
