@@ -1,3 +1,4 @@
+
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -34,7 +35,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
             child: Row(
               children: [
                 AppSidebarRail(activeType: ref.watch(homeSidebarProvider)),
-                const _MainSidebarSwitcher(),
+                ResizableSidebar(child: const _MainSidebarSwitcher()),
                 Expanded(
                   child: Stack(
                     children: [
@@ -140,35 +141,146 @@ class _ChatAreaSwitcher extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(homeSidebarProvider);
     final selectedDm = ref.watch(selectedDmProvider);
+    final activeChat = ref.watch(activeChatProvider);
+
+    // Leave the New Group Chat page when the user opens another section
+    // or picks a conversation.
+    void leaveNewGroupChat() {
+      if (ref.read(activeChatProvider).type == ActiveChatType.newGroupChat) {
+        ref.read(activeChatProvider.notifier).selectChannel('general');
+      }
+    }
+
+    ref.listen(homeSidebarProvider, (previous, next) => leaveNewGroupChat());
+    ref.listen(selectedDmProvider, (previous, next) {
+      if (next != null) leaveNewGroupChat();
+    });
+
+    if (activeChat.type == ActiveChatType.newGroupChat) {
+      return const NewGroupChatView();
+    }
+
+    if (activeChat.type == ActiveChatType.channelDirectory) {
+      return const ChannelDirectoryView();
+    }
+    if (activeChat.type == ActiveChatType.peopleDirectory) {
+      return const PeopleDirectoryView();
+    }
 
     if (state == HomeSidebarType.dms) {
       if (selectedDm != null) {
         return DmChatArea(conversation: selectedDm);
-      } else {
-        return Container(
-          color: context.colors.background,
-          child: Center(
-            child: Text(
-              'Select a conversation to start messaging',
-              style: TextStyle(color: context.colors.textHint, fontSize: 16),
+      }
+
+      return Container(
+        color: context.colors.background,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF47459D)
+                          .withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: const Icon(
+                      Icons.forum_rounded,
+                      size: 48,
+                      color: Color(0xFF47459D),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Recent Messages',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Your conversations will appear here. '
+                    'Start a new message to connect with your team.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.colors.textHint,
+                      fontSize: 15,
+                      height: 1.6,
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Starting a new direct message '
+                            'is not available yet.',
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add, size: 20),
+                    label: const Text('New message'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF47459D),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Start a conversation with someone on your team.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.colors.textHint,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        );
-      }
+        ),
+      );
     }
+
     return const _ChatArea();
   }
 }
 
-class _MainSidebar extends StatelessWidget {
+class _MainSidebar extends StatefulWidget {
   const _MainSidebar();
+
+  @override
+  State<_MainSidebar> createState() => _MainSidebarState();
+}
+
+class _MainSidebarState extends State<_MainSidebar> {
+  bool _isChannelsExpanded = true;
+  bool _isPeopleExpanded = true;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
 
     return Container(
-      width: 320,
       color: colors.sidebar,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,101 +288,252 @@ class _MainSidebar extends StatelessWidget {
           const WorkspaceSwitcherHeader(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            child: Row(
-              children: [
-                Icon(Icons.arrow_drop_down, color: colors.onPrimary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Channels',
-                  style: TextStyle(
-                    color: colors.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const _ChannelItem(label: 'general'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: colors.onPrimary.withValues(alpha: 0.24),
-                ),
-                borderRadius: BorderRadius.circular(6),
-                color: colors.onPrimary.withValues(alpha: 0.05),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'View all channels',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _isChannelsExpanded = !_isChannelsExpanded;
+                  });
+                },
+                child: Row(
+                  children: [
+                    Icon(
+                      _isChannelsExpanded
+                          ? Icons.arrow_drop_down
+                          : Icons.arrow_right,
+                      color: colors.onPrimary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Channels',
                       style: TextStyle(
-                        color: colors.onPrimary.withValues(alpha: 0.7),
-                        fontSize: 13,
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
                       ),
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    color: colors.onPrimary.withValues(alpha: 0.7),
-                    size: 16,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
+          if (_isChannelsExpanded) const _ChannelItem(label: 'general'),
+          const _ViewAllChannelsButton(),
           const _AddChannelButton(),
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(Icons.arrow_right, color: colors.onPrimary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'People',
-                  style: TextStyle(
-                    color: colors.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _isPeopleExpanded = !_isPeopleExpanded;
+                  });
+                },
+                child: Row(
+                  children: [
+                    Icon(
+                      _isPeopleExpanded
+                          ? Icons.arrow_drop_down
+                          : Icons.arrow_right,
+                      color: colors.onPrimary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'People',
+                      style: TextStyle(
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
+          if (_isPeopleExpanded) const _ViewAllPeopleButton(),
         ],
       ),
     );
   }
 }
 
-class _ChannelItem extends StatelessWidget {
+class _ViewAllChannelsButton extends ConsumerWidget {
+  const _ViewAllChannelsButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final activeChat = ref.watch(activeChatProvider);
+    final isSelected = activeChat.type == ActiveChatType.channelDirectory;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Material(
+        color: isSelected
+            ? colors.onPrimary.withValues(alpha: 0.16)
+            : colors.onPrimary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            ref.read(activeChatProvider.notifier).selectChannelDirectory();
+          },
+          hoverColor: colors.onPrimary.withValues(alpha: 0.12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: isSelected
+                    ? colors.onPrimary.withValues(alpha: 0.6)
+                    : colors.onPrimary.withValues(alpha: 0.24),
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'View all channels',
+                    style: TextStyle(
+                      color: isSelected
+                          ? colors.onPrimary
+                          : colors.onPrimary.withValues(alpha: 0.7),
+                      fontSize: 13,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isSelected
+                      ? colors.onPrimary
+                      : colors.onPrimary.withValues(alpha: 0.7),
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewAllPeopleButton extends ConsumerWidget {
+  const _ViewAllPeopleButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final activeChat = ref.watch(activeChatProvider);
+    final isSelected = activeChat.type == ActiveChatType.peopleDirectory;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Material(
+        color: isSelected
+            ? colors.onPrimary.withValues(alpha: 0.16)
+            : colors.onPrimary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            ref.read(activeChatProvider.notifier).selectPeopleDirectory();
+          },
+          hoverColor: colors.onPrimary.withValues(alpha: 0.12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: isSelected
+                    ? colors.onPrimary.withValues(alpha: 0.6)
+                    : colors.onPrimary.withValues(alpha: 0.24),
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'View all people',
+                    style: TextStyle(
+                      color: isSelected
+                          ? colors.onPrimary
+                          : colors.onPrimary.withValues(alpha: 0.7),
+                      fontSize: 13,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: isSelected
+                      ? colors.onPrimary
+                      : colors.onPrimary.withValues(alpha: 0.7),
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChannelItem extends ConsumerWidget {
   final String label;
 
   const _ChannelItem({required this.label});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final activeChat = ref.watch(activeChatProvider);
+    final isSelected =
+        activeChat.type == ActiveChatType.channel && activeChat.id == label;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Row(
-        children: [
-          Text(
-            '#',
-            style: TextStyle(
-              color: colors.onPrimary.withValues(alpha: 0.54),
-              fontSize: 18,
+    return InkWell(
+      onTap: () {
+        ref.read(activeChatProvider.notifier).selectChannel(label);
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          children: [
+            Text(
+              '#',
+              style: TextStyle(
+                color: isSelected
+                    ? colors.onPrimary
+                    : colors.onPrimary.withValues(alpha: 0.54),
+                fontSize: 18,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Text(label, style: TextStyle(color: colors.onPrimary, fontSize: 15)),
-        ],
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: colors.onPrimary,
+                fontSize: 15,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -342,6 +605,33 @@ class _ChatArea extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          Consumer(
+            builder: (context, ref, _) {
+              final channelId = ref.watch(activeChatProvider).id ?? 'general';
+              return Tooltip(
+                message: 'Pinned messages',
+                child: InkWell(
+                  onTap: () =>
+                      _showChannelPinnedMessages(context, ref, channelId),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: colors.divider),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.push_pin_outlined,
+                      size: 18,
+                      color: colors.textPrimary,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 12),
           _HeaderAction(icon: Icons.headphones_outlined, label: 'Start Buzz'),
           const SizedBox(width: 12),
           CircleAvatar(
@@ -351,6 +641,71 @@ class _ChatArea extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Icon(Icons.more_vert, color: colors.textHint),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showChannelPinnedMessages(
+    BuildContext context,
+    WidgetRef ref,
+    String channelId,
+  ) async {
+    final future = ref.read(dmRepositoryProvider).getPinnedMessages(channelId);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('#$channelId pinned messages'),
+        content: SizedBox(
+          width: 420,
+          height: 320,
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final pins = snapshot.data ?? const [];
+              if (pins.isEmpty) {
+                return const Center(
+                  child: Text('No pinned messages in this channel.'),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                itemCount: pins.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = pins[index];
+                  final rawText = (item['message'] ?? item['content'] ?? '')
+                      .toString();
+                  final cleanText = rawText
+                      .replaceAll(RegExp(r'<[^>]*>'), '')
+                      .trim();
+                  final sender =
+                      (item['username'] ?? item['full_name'] ?? 'Member')
+                          .toString();
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.push_pin_outlined, size: 18),
+                    title: Text(
+                      sender,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      cleanText.isEmpty ? 'Pinned message' : cleanText,
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
         ],
       ),
     );

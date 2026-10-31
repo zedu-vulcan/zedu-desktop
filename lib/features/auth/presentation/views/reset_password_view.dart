@@ -315,34 +315,6 @@ class _ResetPasswordViewState extends ConsumerState<ResetPasswordView> {
                       Center(
                         child: Text.rich(
                           TextSpan(
-                            text: 'Try another way? ',
-                            style: context.textTheme.bodyMedium?.copyWith(
-                              color: context.colors.textPrimary,
-                              fontWeight: FontWeight.w400,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: 'Use current password',
-                                style: context.textTheme.bodyMedium?.copyWith(
-                                  color: context.colors.primary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                recognizer: TapGestureRecognizer()
-                                  ..onTap = () {
-                                    context.go(
-                                      AppRouter.changePassword,
-                                      extra: widget.email,
-                                    );
-                                  },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      context.gapV(16),
-                      Center(
-                        child: Text.rich(
-                          TextSpan(
                             text: 'Resend code ',
                             style: context.textTheme.bodyMedium?.copyWith(
                               color: _secondsLeft > 0
