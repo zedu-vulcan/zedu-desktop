@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -79,9 +81,8 @@ class ChatHistoryNotifier extends ChangeNotifier {
   /// so we don't re-fire a notification on every poll cycle.
   final Set<String> _seenIds = {};
 
-  /// Keep track of the polling timer so we can cancel it on dispose.
-  // ignore: cancel_subscriptions
-  dynamic _pollingTimer;
+  /// Keep track of the polling timer subscription so we can cancel it on dispose.
+  StreamSubscription<int>? _pollingTimer;
 
   void _startPolling() {
     // Record all initially-loaded IDs as "already seen" so we only notify
@@ -92,11 +93,9 @@ class ChatHistoryNotifier extends ChangeNotifier {
     }
 
     // Poll every 10 seconds for new messages.
-    _pollingTimer = Stream<int>.periodic(const Duration(seconds: 10)).listen((
-      _,
-    ) {
-      _pollForNewMessages();
-    });
+    _pollingTimer = Stream<int>.periodic(const Duration(seconds: 10)).listen(
+      (_) => _pollForNewMessages(),
+    );
   }
 
   Future<void> _pollForNewMessages() async {
@@ -140,7 +139,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
-    (_pollingTimer as dynamic)?.cancel();
+    _pollingTimer?.cancel();
     super.dispose();
   }
 
