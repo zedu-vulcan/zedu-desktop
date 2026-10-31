@@ -316,29 +316,6 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
   void _insertLink() => _wrapSelection('[', '](url)');
 
-  /// Inserts a divider (`---` on its own line) at the cursor. Any selected
-  /// text is replaced, matching how the other toolbar buttons treat it.
-  void _insertDivider() {
-    final text = _controller.text;
-    final sel = _controller.selection;
-    final start = sel.isValid ? sel.start : text.length;
-    final end = sel.isValid ? sel.end : text.length;
-    final before = text.substring(0, start);
-    final after = text.substring(end);
-    final buffer = StringBuffer();
-    if (before.isNotEmpty && !before.endsWith('\n')) {
-      buffer.write('\n');
-    }
-    buffer.write('---');
-    if (!after.startsWith('\n')) buffer.write('\n');
-    final insert = buffer.toString();
-    _controller.value = TextEditingValue(
-      text: before + insert + after,
-      selection: TextSelection.collapsed(offset: start + insert.length),
-    );
-    _focusNode.requestFocus();
-  }
-
   void _insertQuote() {
     final text = _controller.text;
     final sel = _controller.selection;
