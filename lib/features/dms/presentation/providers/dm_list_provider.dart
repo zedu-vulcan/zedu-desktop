@@ -1,4 +1,3 @@
-
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -90,10 +89,7 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
 
   Future<List<DmConversation>> _fetchPage(String orgId, int page) async {
     final repository = ref.read(dmRepositoryProvider);
-    final results = await repository.getConversations(
-      orgId: orgId,
-      page: page,
-    );
+    final results = await repository.getConversations(orgId: orgId, page: page);
 
     if (results.length < DmRepository.pageSize) {
       _hasMore = false;
