@@ -1,4 +1,3 @@
-
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -186,8 +185,7 @@ class _ChatAreaSwitcher extends ConsumerWidget {
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF47459D)
-                          .withValues(alpha: 0.10),
+                      color: const Color(0xFF47459D).withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(28),
                     ),
                     child: const Icon(
