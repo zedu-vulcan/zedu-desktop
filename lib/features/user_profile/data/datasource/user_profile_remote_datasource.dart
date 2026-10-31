@@ -58,7 +58,7 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
     }
 
     final response = await _apiBaseService.get<Map<String, dynamic>>(
-      path: '/profile/account',
+      path: '/profile',
     );
 
     return ProfileAccountModel.fromJson(
