@@ -26,7 +26,10 @@ void main() {
       notifier.selectPeopleDirectory();
       notifier.selectChannel('general');
 
-      expect(container.read(activeChatProvider), ActiveChatState.generalChannel);
+      expect(
+        container.read(activeChatProvider),
+        ActiveChatState.generalChannel,
+      );
     });
   });
 }

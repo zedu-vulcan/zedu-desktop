@@ -35,7 +35,17 @@ Future<void> pumpSignUpAt(WidgetTester tester, Size size) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [authNotifierProvider.overrideWith(() => FakeAuthNotifier())],
-      child: MaterialApp(theme: AppTheme.light, home: const SignUpView()),
+      // AppTheme.light is built once, on whichever platform the first test
+      // used, so it would keep that platform's density for later variants.
+      // Resolve the density for the platform this test runs on.
+      child: MaterialApp(
+        theme: AppTheme.light.copyWith(
+          visualDensity: VisualDensity.defaultDensityForPlatform(
+            defaultTargetPlatform,
+          ),
+        ),
+        home: const SignUpView(),
+      ),
     ),
   );
   await tester.pump();
