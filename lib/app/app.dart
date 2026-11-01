@@ -10,6 +10,7 @@ class App extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       title: 'Zedu',
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
       routerConfig: AppRouter.router,
       builder: (context, child) => CreditsPaymentDeepLinkListener(
         child: AuthDeepLinkListener(child: child ?? const SizedBox.shrink()),
