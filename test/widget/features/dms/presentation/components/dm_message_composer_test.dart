@@ -1,9 +1,11 @@
+import 'package:flutter/services.dart';
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 import '../../../../../helpers/helpers.dart';
 
 class MockDraftStorage extends Mock implements SecureStorageService {}
+class MockDmRepository extends Mock implements DmRepository {}
 
 class FakeSecureStorageService extends Fake implements SecureStorageService {
   final _values = <String, String>{};
@@ -248,4 +250,174 @@ void main() {
       );
     });
   });
+
+  group('DmMessageComposer Up-arrow edit shortcut', () {
+    late MockDmRepository mockDmRepo;
+
+    setUp(() {
+      mockDmRepo = MockDmRepository();
+      when(() => mockDmRepo.editMessage(any(), content: any(named: 'content')))
+          .thenAnswer((_) async {});
+    });
+
+    Future<TextField> pumpComposerWithMessages(
+      WidgetTester tester, {
+      required List<Map<String, dynamic>> messages,
+    }) async {
+      when(() => mockDmRepo.getMessages('dm-1', page: any(named: 'page')))
+          .thenAnswer((_) async => messages);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            dmDraftStoreProvider.overrideWith(
+              (ref) => DmDraftStore(FakeSecureStorageService()),
+            ),
+            dmRepositoryProvider.overrideWithValue(mockDmRepo),
+          ],
+          child: buildTestMaterialApp(
+            const Scaffold(
+              body: DmMessageComposer(
+                recipientName: 'Ada',
+                channelId: 'dm-1',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return tester.widget<TextField>(find.byType(TextField));
+    }
+
+    testWidgets(
+      'Pressing Up arrow in an empty composer enters edit mode for last sent message',
+      (tester) async {
+        final field = await pumpComposerWithMessages(
+          tester,
+          messages: [
+            {
+              'id': 'msg-1',
+              'content': 'Hllo team',
+              'user_id': 'me',
+              'status': 'sent',
+            },
+          ],
+        );
+
+        // Tap field to focus
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
+
+        // Ensure composer is empty
+        expect(field.controller!.text, isEmpty);
+
+        // Press Up Arrow
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+
+        // Composer should enter edit mode populated with last sent message content
+        expect(field.controller!.text, 'Hllo team');
+        expect(find.text('Editing message'), findsOneWidget);
+
+        // Cleanup
+        field.controller!.clear();
+        await tester.pump(const Duration(milliseconds: 300));
+      },
+    );
+
+    testWidgets(
+      'Pressing Up arrow when composer has text does not trigger edit mode',
+      (tester) async {
+        final field = await pumpComposerWithMessages(
+          tester,
+          messages: [
+            {
+              'id': 'msg-1',
+              'content': 'Hllo team',
+              'user_id': 'me',
+              'status': 'sent',
+            },
+          ],
+        );
+
+        // Type some draft text
+        await tester.enterText(find.byType(TextField), 'Drafting...');
+        await tester.pump();
+
+        // Press Up Arrow
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+
+        // Composer text should remain as typed, not switched to edit mode
+        expect(field.controller!.text, 'Drafting...');
+        expect(find.text('Editing message'), findsNothing);
+
+        // Cleanup
+        field.controller!.clear();
+        await tester.pump(const Duration(milliseconds: 300));
+      },
+    );
+
+    testWidgets(
+      'Pressing Escape cancels edit mode and restores an empty composer',
+      (tester) async {
+        final field = await pumpComposerWithMessages(
+          tester,
+          messages: [
+            {
+              'id': 'msg-1',
+              'content': 'Hllo team',
+              'user_id': 'me',
+              'status': 'sent',
+            },
+          ],
+        );
+
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
+
+        // Press Up Arrow to enter edit mode
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+        expect(find.text('Editing message'), findsOneWidget);
+        expect(field.controller!.text, 'Hllo team');
+
+        // Press Escape to cancel edit mode
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+
+        // Edit mode should be cancelled and composer cleared
+        expect(find.text('Editing message'), findsNothing);
+        expect(field.controller!.text, isEmpty);
+
+        // Cleanup
+        await tester.pump(const Duration(milliseconds: 300));
+      },
+    );
+
+    testWidgets(
+      'Pressing Up arrow does not trigger edit mode if user has sent no messages',
+      (tester) async {
+        final field = await pumpComposerWithMessages(
+          tester,
+          messages: [],
+        );
+
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
+
+        // Press Up Arrow
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+
+        // Composer should stay empty, no edit mode
+        expect(field.controller!.text, isEmpty);
+        expect(find.text('Editing message'), findsNothing);
+
+        // Cleanup
+        await tester.pump(const Duration(milliseconds: 300));
+      },
+    );
+  });
 }
+
