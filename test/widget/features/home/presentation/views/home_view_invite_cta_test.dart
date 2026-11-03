@@ -77,6 +77,9 @@ Widget _buildHomeView(_FakeUserProfileNotifier userProfileNotifier) {
       authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
       creditsNotifierProvider.overrideWith(_FakeCreditsNotifier.new),
       channelProvider.overrideWith(_FakeChannelNotifier.new),
+      channelHistoryProvider.overrideWith(
+        (ref, channelId) async => const <ChannelMessage>[],
+      ),
       userProfileNotifierProvider.overrideWith(() => userProfileNotifier),
     ],
     child: MaterialApp(
@@ -103,6 +106,7 @@ Future<void> _pumpHomeView(
   if (settle) {
     await tester.pumpAndSettle();
   } else {
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
   }
 }
@@ -161,8 +165,45 @@ Future<void> _loadAppFonts() async {
   await wordmarkLoader.load();
 }
 
+class _MemoryStorage extends SecureStorageService {
+  String? token;
+  final Map<String, String> _values = {};
+  @override
+  Future<String?> getAccessToken() async => token;
+  @override
+  Future<void> saveAccessToken(String token, {bool persist = true}) async =>
+      this.token = token;
+  @override
+  Future<void> deleteAccessToken() async => token = null;
+  @override
+  Future<void> writeData(String key, String value) async =>
+      _values[key] = value;
+  @override
+  Future<String?> readData(String key) async => _values[key];
+  @override
+  Future<void> deleteValue(String key) async => _values.remove(key);
+  @override
+  Future<void> clearAll() async {
+    token = null;
+    _values.clear();
+  }
+}
+
 void main() {
   setUpAll(_loadAppFonts);
+
+  setUp(() async {
+    await locator.reset();
+    locator
+      ..registerSingleton<AppConfig>(
+        const AppConfig(apiBaseUrl: 'http://127.0.0.1/', usesMockData: true),
+      )
+      ..registerSingleton<SecureStorageService>(_MemoryStorage());
+  });
+
+  tearDown(() async {
+    await locator.reset();
+  });
 
   group('HomeView invite onboarding CTA', () {
     testWidgets('shows the approved invitation copy and accessible CTA', (
