@@ -44,6 +44,12 @@ class _SearchPanelState extends State<SearchPanel> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
 
