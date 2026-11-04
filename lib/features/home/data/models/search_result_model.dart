@@ -1,99 +1,82 @@
-/// One group of message hits returned by organisation-wide search.
+/// A single organisation message search hit.
 ///
-/// The backend groups results by the message author and the channel, matching
-/// the web app's `MessageSearchResult` shape.
+/// The backend returns search results grouped by sender and channel; the data
+/// source flattens those groups into one of these models per message. The
+/// parser also accepts flat payloads so it stays useful for tests and for any
+/// future endpoint that returns messages directly.
 class SearchResultModel {
   const SearchResultModel({
-    required this.user,
-    required this.messages,
-    required this.channel,
-  });
-
-  final SearchResultUser user;
-  final List<SearchResultMessage> messages;
-  final SearchResultChannel channel;
-
-  factory SearchResultModel.fromJson(Map<String, dynamic> json) {
-    final rawUser = json['user'];
-    final rawChannel = json['channel'];
-    final rawMessages = json['messages'];
-
-    return SearchResultModel(
-      user: SearchResultUser.fromJson(
-        rawUser is Map ? Map<String, dynamic>.from(rawUser) : const {},
-      ),
-      messages: (rawMessages is List ? rawMessages : const <dynamic>[])
-          .whereType<Map<String, dynamic>>()
-          .map(SearchResultMessage.fromJson)
-          .toList(),
-      channel: SearchResultChannel.fromJson(
-        rawChannel is Map ? Map<String, dynamic>.from(rawChannel) : const {},
-      ),
-    );
-  }
-}
-
-class SearchResultUser {
-  const SearchResultUser({
     required this.id,
-    required this.name,
-    required this.avatarUrl,
-    this.defaultAvatarUrl,
-    this.isDeactivated = false,
-    this.isRestricted = false,
-  });
-
-  final String id;
-  final String name;
-  final String avatarUrl;
-  final String? defaultAvatarUrl;
-  final bool isDeactivated;
-  final bool isRestricted;
-
-  factory SearchResultUser.fromJson(Map<String, dynamic> json) =>
-      SearchResultUser(
-        id: json['user_id'] as String? ?? '',
-        name: json['user_name'] as String? ?? '',
-        avatarUrl: json['avatar_url'] as String? ?? '',
-        defaultAvatarUrl: json['default_avatar_url'] as String?,
-        isDeactivated: json['is_deactivated'] as bool? ?? false,
-        isRestricted: json['is_restricted'] as bool? ?? false,
-      );
-}
-
-class SearchResultMessage {
-  const SearchResultMessage({
-    required this.id,
-    required this.text,
-    required this.timestamp,
+    required this.content,
+    required this.channelId,
+    required this.channelName,
+    required this.senderName,
+    this.senderAvatarUrl,
+    this.createdAt,
+    this.channelType,
     this.threadId,
   });
 
   final String id;
-  final String text;
-  final String timestamp;
+  final String content;
+  final String channelId;
+  final String channelName;
+  final String senderName;
+  final String? senderAvatarUrl;
+  final DateTime? createdAt;
+
+  /// The channel's type (`public`, `private`, ...) when the payload says.
+  final String? channelType;
+
+  /// The thread the message belongs to, when it is a thread reply.
   final String? threadId;
 
-  factory SearchResultMessage.fromJson(Map<String, dynamic> json) =>
-      SearchResultMessage(
-        id: json['message_id'] as String? ?? '',
-        text: json['message'] as String? ?? '',
-        timestamp: json['timestamp'] as String? ?? '',
-        threadId: json['thread_id'] as String?,
-      );
+  factory SearchResultModel.fromJson(Map<String, dynamic> json) {
+    return SearchResultModel(
+      id: _asString(json['id'] ?? json['message_id'] ?? json['messageId']),
+      content: _asString(json['content'] ?? json['message']),
+      channelId: _asString(json['channelId'] ?? json['channel_id']),
+      channelName: _asString(json['channelName'] ?? json['channel_name']),
+      senderName: _asString(
+        json['senderName'] ?? json['sender_name'] ?? json['user_name'],
+      ),
+      senderAvatarUrl: _asNullableString(
+        json['senderAvatarUrl'] ??
+            json['sender_avatar_url'] ??
+            json['avatar_url'],
+      ),
+      createdAt: _parseDate(
+        json['createdAt'] ?? json['created_at'] ?? json['timestamp'],
+      ),
+      channelType: _asNullableString(
+        json['channelType'] ?? json['channel_type'],
+      ),
+      threadId: _asNullableString(json['threadId'] ?? json['thread_id']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'content': content,
+    'channelId': channelId,
+    'channelName': channelName,
+    'senderName': senderName,
+    if (senderAvatarUrl != null) 'senderAvatarUrl': senderAvatarUrl,
+    if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+    if (channelType != null) 'channelType': channelType,
+    if (threadId != null) 'threadId': threadId,
+  };
 }
 
-class SearchResultChannel {
-  const SearchResultChannel({required this.id, required this.name, this.type});
+String _asString(Object? value) => value?.toString() ?? '';
 
-  final String id;
-  final String name;
-  final String? type;
+String? _asNullableString(Object? value) {
+  final text = value?.toString();
+  return text == null || text.isEmpty ? null : text;
+}
 
-  factory SearchResultChannel.fromJson(Map<String, dynamic> json) =>
-      SearchResultChannel(
-        id: json['channel_id'] as String? ?? '',
-        name: json['channel_name'] as String? ?? '',
-        type: json['channel_type'] as String?,
-      );
+DateTime? _parseDate(Object? value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  return DateTime.tryParse(value.toString());
 }

@@ -58,14 +58,15 @@ void main() {
       );
 
       final result = results.single;
-      expect(result.user.id, 'u-1');
-      expect(result.user.name, 'Ada Lovelace');
-      expect(result.channel.id, 'c-1');
-      expect(result.channel.name, 'engineering');
-      expect(result.channel.type, 'public');
-      expect(result.messages.single.id, 'm-1');
-      expect(result.messages.single.text, 'Deploy is green');
-      expect(result.messages.single.threadId, 't-1');
+      expect(result.id, 'm-1');
+      expect(result.content, 'Deploy is green');
+      expect(result.senderName, 'Ada Lovelace');
+      expect(result.senderAvatarUrl, 'https://cdn.zedu.test/ada.png');
+      expect(result.channelId, 'c-1');
+      expect(result.channelName, 'engineering');
+      expect(result.channelType, 'public');
+      expect(result.threadId, 't-1');
+      expect(result.createdAt, DateTime.parse('2026-11-04T10:00:00Z'));
     });
 
     test('defaults the sort to relevance and trims the query', () async {
@@ -153,9 +154,10 @@ void main() {
         query: 'deploy',
       )).single;
 
-      expect(result.user.id, '');
-      expect(result.messages, isEmpty);
-      expect(result.channel.id, '');
+      expect(result.id, '');
+      expect(result.content, '');
+      expect(result.senderName, '');
+      expect(result.channelId, '');
     });
   });
 }
