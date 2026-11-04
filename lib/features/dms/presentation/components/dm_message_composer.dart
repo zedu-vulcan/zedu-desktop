@@ -257,12 +257,16 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
+  bool get _canSend {
+    if (_controller.text.trim().isNotEmpty) return true;
+    if (_isEditMode && _editingMessageId != null) return false;
+    return _pendingFiles.isNotEmpty || _voiceNote != null;
+  }
+
   void _handleSend() {
     final text = _controller.text.trim();
     final isEdit = _isEditMode && _editingMessageId != null;
-    // An edit needs text; a waiting file or voice note must not let it through.
-    if (isEdit && text.isEmpty) return;
-    if (text.isEmpty && _pendingFiles.isEmpty && _voiceNote == null) return;
+    if (!_canSend) return;
     if (widget.channelId.isEmpty) {
       _showVoiceError('Channel not loaded yet.');
       return;
@@ -1052,12 +1056,12 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                       ),
                       const Spacer(),
                       GestureDetector(
-                        onTap: _handleSend,
+                        onTap: _canSend ? _handleSend : null,
                         child: Icon(
                           Icons.send_rounded,
-                          color: _controller.text.trim().isEmpty
-                              ? colors.textHint.withValues(alpha: 0.55)
-                              : colors.primary,
+                          color: _canSend
+                              ? colors.primary
+                              : colors.textHint.withValues(alpha: 0.55),
                           size: 22,
                         ),
                       ),
