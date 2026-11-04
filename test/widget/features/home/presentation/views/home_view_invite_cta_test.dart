@@ -18,6 +18,28 @@ class _FakeCreditsNotifier extends CreditsNotifier {
   Future<void> load({String? orgId}) async {}
 }
 
+class _FakeWorkspaceNotifier extends WorkspaceNotifier {
+  @override
+  WorkspaceState build() => const WorkspaceState(
+    selectedWorkspace: Workspace(
+      id: 'org1',
+      name: 'Test Workspace',
+      avatar: '',
+    ),
+  );
+}
+
+class _FakeSecureStorageService extends Fake implements SecureStorageService {
+  @override
+  Future<String?> readData(String key) async => null;
+
+  @override
+  Future<void> writeData(String key, String value) async {}
+
+  @override
+  Future<void> deleteValue(String key) async {}
+}
+
 class _FakeChannelNotifier extends ChannelNotifier {
   @override
   Future<List<Channel>> build() async => [
@@ -77,6 +99,10 @@ Widget _buildHomeView(_FakeUserProfileNotifier userProfileNotifier) {
       authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
       creditsNotifierProvider.overrideWith(_FakeCreditsNotifier.new),
       channelProvider.overrideWith(_FakeChannelNotifier.new),
+      channelHistoryProvider.overrideWith(
+        (ref, channelId) async => <ChannelMessage>[],
+      ),
+      workspaceProvider.overrideWith(_FakeWorkspaceNotifier.new),
       userProfileNotifierProvider.overrideWith(() => userProfileNotifier),
     ],
     child: MaterialApp(
@@ -104,6 +130,7 @@ Future<void> _pumpHomeView(
     await tester.pumpAndSettle();
   } else {
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
   }
 }
 
@@ -117,48 +144,68 @@ Finder get _emailField => find.byWidgetPredicate(
 );
 
 Future<void> _loadAppFonts() async {
+  if (!locator.isRegistered<SecureStorageService>()) {
+    locator.registerSingleton<SecureStorageService>(
+      _FakeSecureStorageService(),
+    );
+  }
+  if (!locator.isRegistered<AppConfig>()) {
+    locator.registerSingleton<AppConfig>(
+      const AppConfig(apiBaseUrl: 'http://test', usesMockData: false),
+    );
+  }
+
   for (final family in ['Lato', 'Roboto']) {
     final loader = FontLoader(family);
     for (final weight in ['Regular', 'Bold']) {
       final bytes = File('assets/fonts/$family/$family-$weight.ttf');
-      loader.addFont(
-        Future.value(ByteData.sublistView(bytes.readAsBytesSync())),
-      );
+      if (bytes.existsSync()) {
+        loader.addFont(
+          Future.value(ByteData.sublistView(bytes.readAsBytesSync())),
+        );
+      }
     }
     await loader.load();
   }
   var flutterRoot = File(Platform.resolvedExecutable).parent;
-  final iconFontPath = [
-    'bin',
-    'cache',
-    'artifacts',
-    'material_fonts',
-    'materialicons-regular.otf',
-  ].join(Platform.pathSeparator);
-  while (flutterRoot.path != flutterRoot.parent.path &&
-      !File(
-        '${flutterRoot.path}${Platform.pathSeparator}$iconFontPath',
-      ).existsSync()) {
+  File? iconFont;
+  while (flutterRoot.path != flutterRoot.parent.path) {
+    for (final name in [
+      'MaterialIcons-Regular.otf',
+      'materialicons-regular.otf',
+    ]) {
+      final candidate = File(
+        [
+          flutterRoot.path,
+          'bin',
+          'cache',
+          'artifacts',
+          'material_fonts',
+          name,
+        ].join(Platform.pathSeparator),
+      );
+      if (candidate.existsSync()) {
+        iconFont = candidate;
+        break;
+      }
+    }
+    if (iconFont != null) break;
     flutterRoot = flutterRoot.parent;
   }
-  final iconFont = File(
-    '${flutterRoot.path}${Platform.pathSeparator}$iconFontPath',
-  );
-  if (!iconFont.existsSync()) {
+  if (iconFont == null || !iconFont.existsSync()) {
     throw StateError('Flutter Material Icons font was not found.');
   }
   final iconLoader = FontLoader('MaterialIcons')
     ..addFont(Future.value(ByteData.sublistView(iconFont.readAsBytesSync())));
   await iconLoader.load();
-  final wordmarkLoader = FontLoader('Poetsen One')
-    ..addFont(
-      Future.value(
-        ByteData.sublistView(
-          File('assets/fonts/Lato/Lato-Regular.ttf').readAsBytesSync(),
-        ),
-      ),
-    );
-  await wordmarkLoader.load();
+  final poetsenFile = File('assets/fonts/Lato/Lato-Regular.ttf');
+  if (poetsenFile.existsSync()) {
+    final wordmarkLoader = FontLoader('Poetsen One')
+      ..addFont(
+        Future.value(ByteData.sublistView(poetsenFile.readAsBytesSync())),
+      );
+    await wordmarkLoader.load();
+  }
 }
 
 void main() {
