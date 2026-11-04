@@ -372,7 +372,9 @@ void _loadErrorTests() {
         return page(2, 'm');
       });
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container
+          .listen(chatHistoryProvider('ch-1'), (_, _) {})
+          .read();
       await pumpEventQueue();
 
       expect(notifier.loadFailed, isTrue);
@@ -391,7 +393,9 @@ void _loadErrorTests() {
         () => mockRepository.getMessages(any(), page: any(named: 'page')),
       ).thenAnswer((_) async => page(2, 'm'));
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container
+          .listen(chatHistoryProvider('ch-1'), (_, _) {})
+          .read();
       await pumpEventQueue();
 
       expect(notifier.loadFailed, isFalse);
@@ -410,7 +414,9 @@ void _loadErrorTests() {
         return page(1, 'b');
       });
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container
+          .listen(chatHistoryProvider('ch-1'), (_, _) {})
+          .read();
       await pumpEventQueue();
       await notifier.loadMore();
 
@@ -572,7 +578,6 @@ void _retryTests() {
     test('auto-disposes ChatHistoryNotifier when listener closes', () async {
       final sub = container.listen(chatHistoryProvider('ch-auto'), (_, _) {});
       final autoNotifier = sub.read();
-      // The subscription keeps the notifier alive.
       // ignore: invalid_use_of_protected_member
       expect(autoNotifier.hasListeners, isTrue);
 
@@ -632,7 +637,9 @@ void _clearHistoryTests() {
         ],
       );
       addTearDown(container.dispose);
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container
+          .listen(chatHistoryProvider('ch-1'), (_, _) {})
+          .read();
       await pumpEventQueue();
       return notifier;
     }
