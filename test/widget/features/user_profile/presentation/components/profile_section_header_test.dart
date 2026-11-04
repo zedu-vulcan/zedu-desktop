@@ -5,7 +5,7 @@ import '../../../../../helpers/helpers.dart';
 
 void main() {
   for (final brightness in Brightness.values) {
-    testWidgets('section title uses the palette in ${brightness.name} mode', (
+    testWidgets('section title and subtitle use the palette in ${brightness.name} mode', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -24,6 +24,12 @@ void main() {
       expect(
         tester.widget<Text>(title).style?.color,
         tester.element(title).colors.textPrimary,
+      );
+
+      final subtitle = find.text('Your profile');
+      expect(
+        tester.widget<Text>(subtitle).style?.color,
+        tester.element(subtitle).colors.textSecondary,
       );
     });
   }
