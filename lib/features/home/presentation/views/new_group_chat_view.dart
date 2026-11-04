@@ -38,15 +38,32 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
   void _onSearchChanged() {
     final query = _searchController.text.trim().toLowerCase();
     final allMembers = ref.read(userProfileNotifierProvider).teamMembers;
+    final currentUser = ref.read(authNotifierProvider).user;
+    final currentUserId = currentUser?.id;
+    final currentUserEmail = currentUser?.email.toLowerCase();
+
+    bool isSelf(TeamMember m) {
+      if (currentUserId != null && m.id == currentUserId) return true;
+      if (currentUserEmail != null &&
+          m.email.toLowerCase() == currentUserEmail) {
+        return true;
+      }
+      return false;
+    }
 
     setState(() {
       if (query.isEmpty) {
         // Show all members that are not already selected
         _filteredMembers = allMembers
-            .where((m) => !_selectedMembers.any((s) => s.id == m.id))
+            .where(
+              (m) =>
+                  !isSelf(m) &&
+                  !_selectedMembers.any((s) => s.id == m.id),
+            )
             .toList();
       } else {
         _filteredMembers = allMembers.where((m) {
+          if (isSelf(m)) return false;
           final isSelected = _selectedMembers.any((s) => s.id == m.id);
           if (isSelected) return false;
 
