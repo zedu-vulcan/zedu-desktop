@@ -117,15 +117,16 @@ class ApiBaseService {
     Map<String, String>? headers,
   }) async {
     final normalizedPath = normalizePath(path);
+    final requestHeaders = headersForPath(normalizedPath, headers: headers);
+    if (data is FormData) {
+      requestHeaders.remove('Content-Type');
+    }
     try {
       final response = await _dio.request<T>(
         normalizedPath,
         data: data,
         queryParameters: queryParameters,
-        options: Options(
-          method: method,
-          headers: headersForPath(normalizedPath, headers: headers),
-        ),
+        options: Options(method: method, headers: requestHeaders),
       );
 
       final responseData = response.data;
@@ -139,8 +140,15 @@ class ApiBaseService {
         );
       }
 
+      if (responseData is! T) {
+        throw ApiFailure.fromParsingError(
+          'expected $T, got ${responseData.runtimeType}',
+          path: path,
+        );
+      }
+
       return ApiResponseModel<T>(
-        data: responseData as T,
+        data: responseData,
         statusCode: response.statusCode ?? 0,
         message: response.statusMessage,
       );
