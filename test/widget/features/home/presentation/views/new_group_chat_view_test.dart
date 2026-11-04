@@ -13,6 +13,33 @@ class _FakeUserProfileNotifier extends UserProfileNotifier {
   }
 }
 
+class _FakeAuthNotifier extends AuthNotifier {
+  final User? _user;
+  _FakeAuthNotifier([this._user]);
+
+  @override
+  AuthState build() => AuthState(
+        status: _user != null ? AuthStatus.authenticated : AuthStatus.unauthenticated,
+        user: _user,
+      );
+}
+
+User _buildTestUser({required String id, required String email}) => User(
+      id: id,
+      firstName: 'Test',
+      lastName: 'User',
+      email: email,
+      phone: '',
+      username: 'testuser',
+      isVerified: true,
+      isOnboarded: true,
+      createdAt: DateTime.utc(2026, 1, 1),
+      currentOrg: 'test-org',
+      currentOrganisationSlug: 'test-org',
+      avatarUrl: '',
+      defaultAvatarUrl: '',
+    );
+
 void main() {
   final testMembers = [
     const TeamMember(
@@ -49,12 +76,16 @@ void main() {
     ),
   ];
 
-  Widget buildWidget({List<TeamMember>? members}) {
+  Widget buildWidget({List<TeamMember>? members, User? currentUser}) {
     return ProviderScope(
       overrides: [
         userProfileNotifierProvider.overrideWith(
           () => _FakeUserProfileNotifier(members ?? testMembers),
         ),
+        if (currentUser != null)
+          authNotifierProvider.overrideWith(
+            () => _FakeAuthNotifier(currentUser),
+          ),
       ],
       child: buildTestMaterialApp(
         const Scaffold(
@@ -94,6 +125,33 @@ void main() {
       expect(find.text('whitespace'), findsOneWidget);
       expect(find.text('nullname'), findsOneWidget);
       expect(find.text('Alice Cooper'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'filters out the currently signed-in user from member suggestions',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final currentUser = _buildTestUser(id: 'member-4', email: 'alice@zedu.test');
+
+      await tester.pumpWidget(buildWidget(currentUser: currentUser));
+      await tester.pumpAndSettle();
+
+      final searchField = findSearchField();
+      await tester.tap(searchField);
+      await tester.pumpAndSettle();
+
+      // Alice Cooper is the signed-in user and should NOT be suggested
+      expect(find.text('Alice Cooper'), findsNothing);
+
+      // Other team members should be suggested
+      expect(find.text('emptyname'), findsOneWidget);
+      expect(find.text('whitespace'), findsOneWidget);
+      expect(find.text('nullname'), findsOneWidget);
     },
   );
 
