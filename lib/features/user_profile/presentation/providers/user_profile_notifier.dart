@@ -11,6 +11,11 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
   /// (switching A to B and back to A).
   int _loadCounter = 0;
 
+  /// The workspace whose organisation and notification data the state holds,
+  /// and whether any load has filled it yet.
+  String? _loadedOrgId;
+  bool _hasLoaded = false;
+
   @override
   UserProfileState build() {
     _repository = ref.read(userProfileRepositoryProvider);
@@ -118,6 +123,10 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
           isSaving: false,
           successMessage: 'Account deleted successfully.',
         );
+        // The account no longer exists, so end the session too: clear the
+        // token and return to the login screen instead of staying signed in.
+        if (!ref.mounted) return;
+        await ref.read(authNotifierProvider.notifier).logout();
       case Failure<void>():
         state = state.copyWith(
           isSaving: false,
@@ -137,10 +146,19 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
       clearError: true,
       clearSuccess: true,
     );
+    final orgId = ref.read(workspaceProvider).selectedWorkspace?.id;
     final result = await _repository.updateNotificationPreferences(
-      orgId: ref.read(workspaceProvider).selectedWorkspace?.id,
+      orgId: orgId,
       preferences: preferences,
     );
+    // The user may have switched workspace while the save was in flight. Its
+    // answer belongs to the old workspace, so it must not replace what the new
+    // workspace shows or announce a save for it.
+    if (!ref.mounted) return;
+    if (ref.read(workspaceProvider).selectedWorkspace?.id != orgId) {
+      state = state.copyWith(isSaving: false);
+      return;
+    }
     switch (result) {
       case Success<NotificationPreferences>():
         state = state.copyWith(
@@ -156,7 +174,9 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
     }
   }
 
-  Future<void> changePassword({
+  /// Returns the outcome so the change password dialog can stay open and show
+  /// a failure itself, which is why a failure doesn't also set the state error.
+  Future<Result<void>> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
@@ -176,11 +196,9 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
           successMessage: 'Password updated successfully.',
         );
       case Failure<void>():
-        state = state.copyWith(
-          isSaving: false,
-          error: result.error.friendlyMessage,
-        );
+        state = state.copyWith(isSaving: false);
     }
+    return result;
   }
 
   Future<void> updateOrganization(OrganizationProfile organization) async {
@@ -189,10 +207,18 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
       clearError: true,
       clearSuccess: true,
     );
+    final orgId = ref.read(workspaceProvider).selectedWorkspace?.id;
     final result = await _repository.updateOrganization(
       organization,
-      orgId: ref.read(workspaceProvider).selectedWorkspace?.id,
+      orgId: orgId,
     );
+    if (!ref.mounted) return;
+    // The workspace changed while saving, so this response isn't about the
+    // organization on screen any more.
+    if (ref.read(workspaceProvider).selectedWorkspace?.id != orgId) {
+      state = state.copyWith(isSaving: false);
+      return;
+    }
     switch (result) {
       case Success<OrganizationProfile>():
         state = state.copyWith(
@@ -200,6 +226,11 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
           isSaving: false,
           successMessage: 'Organization information saved successfully.',
         );
+        if (orgId != null) {
+          ref
+              .read(workspaceProvider.notifier)
+              .renameWorkspace(orgId, result.value.name);
+        }
       case Failure<OrganizationProfile>():
         state = state.copyWith(
           isSaving: false,
@@ -636,16 +667,28 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
     // start, so check again right before writing the state.
     if (_isObsoleteLoad(loadId, orgId)) return;
 
+    // copyWith keeps the old value for a null, which is right for a retry on
+    // the same workspace. After switching workspace the old organisation and
+    // notification choices belong to another workspace, so a failed load must
+    // clear them instead of showing (and later saving) them under this one.
+    final switchedWorkspace = !_hasLoaded || _loadedOrgId != orgId;
+    final notifications = _valueOrNull(notificationResult);
+    final organization = _valueOrNull(organizationResult);
+    _loadedOrgId = orgId;
+    _hasLoaded = true;
+
     state = state.copyWith(
       account: _valueOrNull(accountResult),
-      notifications: _valueOrNull(notificationResult),
+      notifications: notifications,
       securitySessions: _valueOrNull(securityResult) ?? const [],
-      organization: _valueOrNull(organizationResult),
+      organization: organization,
       teamMembers: loadedTeamMembers,
       rolesAndPermissions: _valueOrNull(rolesResult) ?? const [],
       billing: _valueOrNull(billingResult),
       isLoading: false,
       error: error,
+      clearNotifications: switchedWorkspace && notifications == null,
+      clearOrganization: switchedWorkspace && organization == null,
     );
   }
 
