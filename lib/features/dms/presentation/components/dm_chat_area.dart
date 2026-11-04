@@ -935,6 +935,19 @@ class _MessageBubble extends ConsumerWidget {
     final status = message['status'] as String?;
     final messageId = message['id'] as String? ?? '';
 
+    final targetId = ref.watch(targetMessageIdProvider);
+    final isTarget = targetId != null && targetId.isNotEmpty && targetId == messageId;
+    if (isTarget) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.5,
+        );
+        ref.read(targetMessageIdProvider.notifier).state = null;
+      });
+    }
+
     final hour = createdAt.hour > 12
         ? createdAt.hour - 12
         : (createdAt.hour == 0 ? 12 : createdAt.hour);
@@ -1014,9 +1027,26 @@ class _MessageBubble extends ConsumerWidget {
                 ),
                 if (content.isNotEmpty)
                   _OwnMessageMenu(
-                    enabled: isMe && status == null,
-                    onEdit: () => onEdit(messageId, rawContent),
-                    onDelete: () => _confirmDelete(context, ref, messageId),
+                    enabled: status == null,
+                    isMe: isMe,
+                    onEdit: isMe ? () => onEdit(messageId, rawContent) : null,
+                    onCopyLink: () async {
+                      final url = MessageDeepLinkParser.buildDeepLink(
+                        channelId: channelId,
+                        messageId: messageId,
+                      );
+                      await Clipboard.setData(ClipboardData(text: url));
+                      if (context.mounted) {
+                        AppToastService.show(
+                          context,
+                          type: AppToastType.success,
+                          message: 'Link copied to clipboard',
+                        );
+                      }
+                    },
+                    onDelete: isMe
+                        ? () => _confirmDelete(context, ref, messageId)
+                        : null,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -1045,10 +1075,26 @@ class _MessageBubble extends ConsumerWidget {
                         // No text to hang the menu on, so it goes on the
                         // attachments (Delete only: there is nothing to edit).
                         : _OwnMessageMenu(
-                            enabled: isMe && status == null,
+                            enabled: status == null,
+                            isMe: isMe,
                             onEdit: null,
-                            onDelete: () =>
-                                _confirmDelete(context, ref, messageId),
+                            onCopyLink: () async {
+                              final url = MessageDeepLinkParser.buildDeepLink(
+                                channelId: channelId,
+                                messageId: messageId,
+                              );
+                              await Clipboard.setData(ClipboardData(text: url));
+                              if (context.mounted) {
+                                AppToastService.show(
+                                  context,
+                                  type: AppToastType.success,
+                                  message: 'Link copied to clipboard',
+                                );
+                              }
+                            },
+                            onDelete: isMe
+                                ? () => _confirmDelete(context, ref, messageId)
+                                : null,
                             child: _AttachmentBubbleList(
                               media: media,
                               isMe: isMe,
@@ -1236,14 +1282,18 @@ class _AttachmentBubbleList extends StatelessWidget {
 class _OwnMessageMenu extends StatefulWidget {
   const _OwnMessageMenu({
     required this.enabled,
-    required this.onEdit,
-    required this.onDelete,
+    this.isMe = true,
+    this.onEdit,
+    this.onDelete,
+    this.onCopyLink,
     required this.child,
   });
 
   final bool enabled;
+  final bool isMe;
   final VoidCallback? onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
+  final VoidCallback? onCopyLink;
   final Widget child;
 
   @override
@@ -1258,6 +1308,41 @@ class _OwnMessageMenuState extends State<_OwnMessageMenu> {
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
 
+    final actionButton = Opacity(
+      opacity: _hovered ? 1 : 0,
+      child: PopupMenuButton<String>(
+        key: _menuKey,
+        tooltip: 'Message actions',
+        icon: const Icon(Icons.more_horiz, size: 18),
+        onSelected: (value) {
+          if (value == 'edit') {
+            widget.onEdit?.call();
+          } else if (value == 'copy_link') {
+            widget.onCopyLink?.call();
+          } else if (value == 'delete') {
+            widget.onDelete?.call();
+          }
+        },
+        itemBuilder: (_) => [
+          if (widget.onEdit != null)
+            const PopupMenuItem(
+              value: 'edit',
+              child: Text('Edit message'),
+            ),
+          if (widget.onCopyLink != null)
+            const PopupMenuItem(
+              value: 'copy_link',
+              child: Text('Copy link'),
+            ),
+          if (widget.onDelete != null)
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text('Delete message'),
+            ),
+        ],
+      ),
+    );
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -1267,28 +1352,9 @@ class _OwnMessageMenuState extends State<_OwnMessageMenu> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Opacity(
-              opacity: _hovered ? 1 : 0,
-              child: PopupMenuButton<String>(
-                key: _menuKey,
-                tooltip: 'Message actions',
-                icon: const Icon(Icons.more_horiz, size: 18),
-                onSelected: (value) =>
-                    value == 'edit' ? widget.onEdit?.call() : widget.onDelete(),
-                itemBuilder: (_) => [
-                  if (widget.onEdit != null)
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Text('Edit message'),
-                    ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete message'),
-                  ),
-                ],
-              ),
-            ),
+            if (widget.isMe) actionButton,
             Flexible(child: widget.child),
+            if (!widget.isMe) actionButton,
           ],
         ),
       ),

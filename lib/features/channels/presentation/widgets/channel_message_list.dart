@@ -35,21 +35,58 @@ class ChannelMessageList extends ConsumerWidget {
                     vertical: 16,
                   ),
                   itemCount: messages.length,
-                  itemBuilder: (context, index) =>
-                      ChannelMessageTile(message: messages[index]),
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    return ChannelMessageTile(
+                      message: message,
+                      channelId: channelId,
+                      onCopyLink: message.id != null
+                          ? () async {
+                              final url = MessageDeepLinkParser.buildDeepLink(
+                                channelId: channelId,
+                                messageId: message.id!,
+                              );
+                              await Clipboard.setData(ClipboardData(text: url));
+                              if (context.mounted) {
+                                AppToastService.show(
+                                  context,
+                                  type: AppToastType.success,
+                                  message: 'Link copied to clipboard',
+                                );
+                              }
+                            }
+                          : null,
+                    );
+                  },
                 ),
         );
   }
 }
 
-class ChannelMessageTile extends StatelessWidget {
-  const ChannelMessageTile({super.key, required this.message});
+class ChannelMessageTile extends ConsumerStatefulWidget {
+  const ChannelMessageTile({
+    super.key,
+    required this.message,
+    required this.channelId,
+    this.onCopyLink,
+  });
 
   final ChannelMessage message;
+  final String channelId;
+  final VoidCallback? onCopyLink;
+
+  @override
+  ConsumerState<ChannelMessageTile> createState() => _ChannelMessageTileState();
+}
+
+class _ChannelMessageTileState extends ConsumerState<ChannelMessageTile> {
+  final _menuKey = GlobalKey<PopupMenuButtonState<String>>();
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final message = widget.message;
     final avatarUrl = message.avatarUrl;
     final time = message.createdAt;
     final trimmedName = message.senderName.trim();
@@ -57,7 +94,26 @@ class ChannelMessageTile extends StatelessWidget {
         ? trimmedName.characters.first.toUpperCase()
         : '?';
 
-    return Padding(
+    final targetId = ref.watch(targetMessageIdProvider);
+    final isTarget = targetId != null &&
+        targetId.isNotEmpty &&
+        message.id != null &&
+        targetId == message.id;
+
+    if (isTarget) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 300),
+          alignment: 0.5,
+        );
+        ref.read(targetMessageIdProvider.notifier).state = null;
+      });
+    }
+
+    final hasActions = widget.onCopyLink != null;
+
+    final tile = Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -75,26 +131,52 @@ class ChannelMessageTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text.rich(
-                  TextSpan(
-                    text: message.senderName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: colors.textPrimary,
-                    ),
-                    children: [
-                      if (time != null)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text.rich(
                         TextSpan(
-                          text:
-                              '  ${TimeOfDay.fromDateTime(time).format(context)}',
+                          text: message.senderName,
                           style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.normal,
-                            color: colors.textSecondary,
+                            fontWeight: FontWeight.bold,
+                            color: colors.textPrimary,
                           ),
+                          children: [
+                            if (time != null)
+                              TextSpan(
+                                text:
+                                    '  ${TimeOfDay.fromDateTime(time).format(context)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.normal,
+                                  color: colors.textSecondary,
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
+                    if (hasActions)
+                      Opacity(
+                        opacity: _hovered ? 1 : 0,
+                        child: PopupMenuButton<String>(
+                          key: _menuKey,
+                          tooltip: 'Message actions',
+                          icon: const Icon(Icons.more_horiz, size: 18),
+                          onSelected: (value) {
+                            if (value == 'copy_link') {
+                              widget.onCopyLink?.call();
+                            }
+                          },
+                          itemBuilder: (_) => [
+                            const PopupMenuItem(
+                              value: 'copy_link',
+                              child: Text('Copy link'),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 SelectableText(
@@ -107,5 +189,19 @@ class ChannelMessageTile extends StatelessWidget {
         ],
       ),
     );
+
+    if (hasActions) {
+      return MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onSecondaryTap: () => _menuKey.currentState?.showButtonMenu(),
+          onLongPress: () => _menuKey.currentState?.showButtonMenu(),
+          child: tile,
+        ),
+      );
+    }
+
+    return tile;
   }
 }

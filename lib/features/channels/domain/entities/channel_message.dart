@@ -1,12 +1,14 @@
 /// A top-level message in a channel, as returned by
 /// `GET /threads/channels/{channel_id}`.
 class ChannelMessage {
+  final String? id;
   final String senderName;
   final String? avatarUrl;
   final String text;
   final DateTime? createdAt;
 
   const ChannelMessage({
+    this.id,
     required this.senderName,
     required this.text,
     this.avatarUrl,
@@ -20,6 +22,7 @@ class ChannelMessage {
     }
 
     return ChannelMessage(
+      id: nonEmpty(json['id']) ?? nonEmpty(json['message_id']),
       senderName:
           nonEmpty(json['full_name']) ??
           nonEmpty(json['username']) ??
