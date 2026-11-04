@@ -48,19 +48,16 @@ class UserMenuDialog extends ConsumerWidget {
                     // Avatar with presence dot overlay
                     Stack(
                       children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: colors.sidebar,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 32,
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: colors.sidebar,
+                              borderRadius: BorderRadius.circular(8),
                             ),
+                            child: _buildAvatar(authUser, colors),
                           ),
                         ),
                         Positioned(
@@ -284,6 +281,51 @@ class UserMenuDialog extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAvatar(User? user, AppPalette colors) {
+    final avatarUrl = user?.avatarUrl;
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return Image.network(
+        avatarUrl,
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildInitialsOrIcon(user, colors),
+      );
+    }
+    return _buildInitialsOrIcon(user, colors);
+  }
+
+  Widget _buildInitialsOrIcon(User? user, AppPalette colors) {
+    final name = user?.fullname.trim() ?? '';
+    if (name.isNotEmpty) {
+      final parts = name
+          .split(RegExp(r'\s+'))
+          .where((p) => p.isNotEmpty)
+          .toList();
+      final initials = parts.isEmpty
+          ? ''
+          : parts.length == 1
+          ? parts.first.substring(0, 1).toUpperCase()
+          : '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+      if (initials.isNotEmpty) {
+        return Center(
+          child: Text(
+            initials,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      }
+    }
+    return const Center(
+      child: Icon(Icons.person, color: Colors.white, size: 32),
     );
   }
 }

@@ -276,4 +276,90 @@ void main() {
       },
     );
   });
+
+  group('UserMenuDialog avatar rendering', () {
+    testWidgets('displays user initials when avatarUrl is empty', (
+      tester,
+    ) async {
+      await pumpOpenMenu(
+        tester,
+        FakeAuthNotifier(
+          initial: AuthState(
+            status: AuthStatus.authenticated,
+            user: _buildUser(online: true),
+          ),
+        ),
+      );
+
+      expect(find.text('TU'), findsOneWidget);
+      expect(find.byIcon(Icons.person), findsNothing);
+    });
+
+    testWidgets('displays Image.network when avatarUrl is present', (
+      tester,
+    ) async {
+      final userWithAvatar = User(
+        id: 'user-2',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'jane@example.com',
+        phone: '+1234567890',
+        username: 'janedoe',
+        isVerified: true,
+        isOnboarded: true,
+        createdAt: DateTime(2026, 1, 1),
+        currentOrg: 'org-1',
+        currentOrganisationSlug: 'test-org',
+        avatarUrl: 'https://example.com/avatar.jpg',
+        defaultAvatarUrl: '',
+        status: const UserStatus(online: true),
+      );
+
+      await pumpOpenMenu(
+        tester,
+        FakeAuthNotifier(
+          initial: AuthState(
+            status: AuthStatus.authenticated,
+            user: userWithAvatar,
+          ),
+        ),
+      );
+
+      expect(find.byType(Image), findsOneWidget);
+    });
+
+    testWidgets(
+      'falls back to person icon when user has no name and no avatar',
+      (tester) async {
+        final userNoName = User(
+          id: 'user-3',
+          firstName: '',
+          lastName: '',
+          email: 'anon@example.com',
+          phone: '+1234567890',
+          username: 'anon',
+          isVerified: true,
+          isOnboarded: true,
+          createdAt: DateTime(2026, 1, 1),
+          currentOrg: 'org-1',
+          currentOrganisationSlug: 'test-org',
+          avatarUrl: '',
+          defaultAvatarUrl: '',
+          status: const UserStatus(online: true),
+        );
+
+        await pumpOpenMenu(
+          tester,
+          FakeAuthNotifier(
+            initial: AuthState(
+              status: AuthStatus.authenticated,
+              user: userNoName,
+            ),
+          ),
+        );
+
+        expect(find.byIcon(Icons.person), findsOneWidget);
+      },
+    );
+  });
 }
