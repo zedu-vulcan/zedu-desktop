@@ -29,6 +29,9 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
   @override
   void initState() {
     super.initState();
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
     _focusNode.addListener(() {
       setState(() {
         _isFocused = _focusNode.hasFocus;
