@@ -8,6 +8,9 @@ abstract class FilesRemoteDataSource {
     required FilesScope view,
     String? parentId,
   });
+
+  /// Files pinned or favourited by the signed-in user.
+  Future<List<WorkspaceFile>> fetchFavoriteFiles();
 }
 
 /// Talks to the same `/files` endpoints as the web app. The server picks
@@ -67,6 +70,19 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     return (rawFolders is List ? rawFolders : const <dynamic>[])
         .whereType<Map<dynamic, dynamic>>()
         .map((e) => FileFolder.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  @override
+  Future<List<WorkspaceFile>> fetchFavoriteFiles() async {
+    final response = await apiBaseService.get<Map<String, dynamic>>(
+      path: '/files/favorites',
+    );
+    final data = response.data['data'];
+    final rawFiles = data is Map ? data['files'] : data;
+    return (rawFiles is List ? rawFiles : const <dynamic>[])
+        .whereType<Map<dynamic, dynamic>>()
+        .map((e) => WorkspaceFile.fromJson(Map<String, dynamic>.from(e)))
         .toList();
   }
 }

@@ -148,4 +148,51 @@ void main() {
       expect(await datasource.fetchFolders(view: FilesScope.all), isEmpty);
     });
   });
+
+  group('fetchFavoriteFiles', () {
+    test('reads the favourite files from GET /files/favorites', () async {
+      when(
+        () => api.get<Map<String, dynamic>>(path: '/files/favorites'),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {
+            'data': {
+              'files': [
+                {
+                  'id': 'f-9',
+                  'file_name': 'roadmap.pdf',
+                  'file_type': 'pdf',
+                  'file_link': 'https://cdn.zedu.test/roadmap.pdf',
+                  'size': 4096,
+                  'user_id': 'u-1',
+                  'shared_in': 'general',
+                  'updated_at': '2026-11-01T10:00:00Z',
+                },
+              ],
+            },
+          },
+        ),
+      );
+
+      final files = await datasource.fetchFavoriteFiles();
+
+      expect(files.single.id, 'f-9');
+      expect(files.single.name, 'roadmap.pdf');
+      expect(files.single.size, 4096);
+    });
+
+    test('returns an empty list when there are no favourites', () async {
+      when(
+        () => api.get<Map<String, dynamic>>(path: '/files/favorites'),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {'data': <dynamic>[]},
+        ),
+      );
+
+      expect(await datasource.fetchFavoriteFiles(), isEmpty);
+    });
+  });
 }
