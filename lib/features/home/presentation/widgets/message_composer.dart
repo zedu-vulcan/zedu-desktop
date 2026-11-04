@@ -27,6 +27,9 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
   @override
   void initState() {
     super.initState();
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
     _focusNode.addListener(() {
       setState(() {
         _isFocused = _focusNode.hasFocus;
@@ -342,6 +345,7 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
                         onPressed: _stopRecording,
                         icon: Icon(Icons.stop_circle, color: colors.error),
                         splashRadius: 20,
+                        tooltip: 'Stop recording',
                       ),
                     ],
                   )
@@ -350,6 +354,7 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
                     onPressed: _handleSend,
                     icon: Icon(Icons.send, color: colors.primary),
                     splashRadius: 20,
+                    tooltip: 'Send message',
                   ),
               ],
             ),
