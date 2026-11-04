@@ -26,6 +26,48 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
     return '@${parts.first}_${parts.last}';
   }
 
+  bool get _isOwnSpace {
+    final userId = ref.read(authNotifierProvider).user?.id;
+    return userId != null &&
+        userId.isNotEmpty &&
+        widget.conversation.participantId == userId;
+  }
+
+  bool _isOwnSpaceSystemEvent(Map<String, dynamic> message) {
+    final type =
+        (message['type'] ??
+                message['message_type'] ??
+                message['event_type'] ??
+                '')
+            .toString()
+            .toLowerCase();
+    final isSystemEvent =
+        message['is_system'] == true ||
+        const {'system', 'event', 'notification'}.contains(type);
+    final content = (message['content'] ?? '').toString();
+    return isSystemEvent &&
+        RegExp(
+          r'\bstarted a conversation with yourself\b',
+          caseSensitive: false,
+        ).hasMatch(content);
+  }
+
+  Future<void> _editOwnProfile() async {
+    final notifier = ref.read(userProfileNotifierProvider.notifier);
+    if (ref.read(userProfileNotifierProvider).account == null) {
+      await notifier.load();
+    }
+    if (!mounted) return;
+
+    final account = ref.read(userProfileNotifierProvider).account;
+    if (account == null) {
+      _showActionNotice('Could not load your profile. Try again.');
+      return;
+    }
+
+    await showEditProfileDialog(context, account, notifier.updateAccount);
+  }
+
   Future<void> _handleMenuAction(String action) async {
     final conversation = widget.conversation;
     switch (action) {
@@ -183,9 +225,8 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
   }
 
   void _showActionNotice(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -221,6 +262,7 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
               children: [
                 _DmChatHeader(
                   conversation: widget.conversation,
+                  isOwnSpace: _isOwnSpace,
                   isMuted: isMuted,
                   isPinned: isPinned,
                   onMenuAction: _handleMenuAction,
@@ -231,7 +273,14 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                       final historyState = ref.watch(
                         chatHistoryProvider(widget.conversation.channelId),
                       );
-                      final messages = historyState.messages;
+                      final isOwnSpace = _isOwnSpace;
+                      final messages = isOwnSpace
+                          ? historyState.messages
+                                .where(
+                                  (message) => !_isOwnSpaceSystemEvent(message),
+                                )
+                                .toList()
+                          : historyState.messages;
 
                       return NotificationListener<ScrollNotification>(
                         onNotification: (ScrollNotification scrollInfo) {
@@ -285,9 +334,14 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                               ),
                             if (!historyState.hasMore)
                               SliverToBoxAdapter(
-                                child: DmProfileCard(
-                                  conversation: widget.conversation,
-                                ),
+                                child: isOwnSpace
+                                    ? OwnSpaceIntro(
+                                        conversation: widget.conversation,
+                                        onEditProfile: _editOwnProfile,
+                                      )
+                                    : DmProfileCard(
+                                        conversation: widget.conversation,
+                                      ),
                               ),
                           ],
                         ),
@@ -298,6 +352,7 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                 DmMessageComposer(
                   key: _composerKey,
                   recipientName: _recipientHandle,
+                  hintText: _isOwnSpace ? 'Write a note to yourself' : null,
                   channelId: widget.conversation.channelId,
                   participants: widget.conversation.participants,
                 ),
@@ -514,12 +569,14 @@ class _ConversationSearchDialogState extends State<_ConversationSearchDialog> {
 
 class _DmChatHeader extends StatelessWidget {
   final DmConversation conversation;
+  final bool isOwnSpace;
   final bool isMuted;
   final bool isPinned;
   final ValueChanged<String> onMenuAction;
 
   const _DmChatHeader({
     required this.conversation,
+    required this.isOwnSpace,
     required this.isMuted,
     required this.isPinned,
     required this.onMenuAction,
@@ -577,14 +634,35 @@ class _DmChatHeader extends StatelessWidget {
                 : null,
           ),
           const SizedBox(width: 12),
-          Text(
-            conversation.displayName,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: colors.textPrimary,
+          if (isOwnSpace)
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: colors.textPrimary,
+                ),
+                children: [
+                  TextSpan(text: conversation.displayName),
+                  TextSpan(
+                    text: ' (you)',
+                    style: TextStyle(
+                      color: colors.textHint,
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Text(
+              conversation.displayName,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: colors.textPrimary,
+              ),
             ),
-          ),
           const Spacer(),
           Consumer(
             builder: (context, ref, child) {

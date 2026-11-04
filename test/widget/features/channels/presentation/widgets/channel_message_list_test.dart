@@ -60,4 +60,17 @@ void main() {
 
     expect(find.text("Couldn't load messages. Retry"), findsOneWidget);
   });
+
+  testWidgets(
+    'renders placeholder initial for empty senderName without crashing',
+    (tester) async {
+      await pumpList(
+        tester,
+        const Success([ChannelMessage(senderName: '', text: 'empty sender')]),
+      );
+
+      expect(find.text('?'), findsOneWidget);
+      expect(find.text('empty sender'), findsOneWidget);
+    },
+  );
 }

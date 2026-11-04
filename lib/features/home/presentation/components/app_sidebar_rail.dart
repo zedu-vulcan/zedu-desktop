@@ -117,6 +117,7 @@ class _AppSidebarRailState extends ConsumerState<AppSidebarRail> {
           _RailBottomIcon(
             icon: Icons.settings_outlined,
             selected: settingsSelected,
+            tooltip: 'Settings',
             onTap: () {
               context.go(AppRouter.profile);
             },

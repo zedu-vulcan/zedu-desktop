@@ -93,6 +93,16 @@ Future<void> openModal(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('shows the invite hint without a leading pipe', (tester) async {
+    await tester.pumpWidget(
+      buildModalUnderTest(() async => const AddEveryoneNobodyToAdd('general')),
+    );
+    await openModal(tester);
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.decoration?.hintText, 'Enter name or email');
+  });
+
   group('InviteTeammatesModal "Add everyone"', () {
     testWidgets('adds everyone, shows how many and closes the window', (
       tester,

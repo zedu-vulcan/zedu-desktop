@@ -479,7 +479,9 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
             invite['id'] as String? ??
             DateTime.now().millisecondsSinceEpoch.toString(),
         email: invite['email'] as String? ?? email,
-        role: role,
+        // Prefer the role name the backend echoes back so the member table
+        // never has to fall back to the raw `role_id` UUID.
+        role: invite['role_name'] as String? ?? role,
         dateJoined: invite['sent_at'] as String? ?? 'Pending',
         status: TeamMemberStatus.pending,
         name: email.split('@').first,

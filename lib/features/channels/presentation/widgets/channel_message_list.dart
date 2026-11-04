@@ -52,6 +52,10 @@ class ChannelMessageTile extends StatelessWidget {
     final colors = context.colors;
     final avatarUrl = message.avatarUrl;
     final time = message.createdAt;
+    final trimmedName = message.senderName.trim();
+    final initial = trimmedName.isNotEmpty
+        ? trimmedName.characters.first.toUpperCase()
+        : '?';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -63,10 +67,7 @@ class ChannelMessageTile extends StatelessWidget {
             backgroundColor: colors.primary,
             backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
             child: avatarUrl == null
-                ? Text(
-                    message.senderName.characters.first.toUpperCase(),
-                    style: TextStyle(color: colors.onPrimary),
-                  )
+                ? Text(initial, style: TextStyle(color: colors.onPrimary))
                 : null,
           ),
           const SizedBox(width: 12),

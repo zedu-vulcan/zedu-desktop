@@ -1040,16 +1040,8 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
-  DateTime? _expiryFromTimeout(StatusTimeout timeout) {
-    final now = DateTime.now();
-    return switch (timeout) {
-      StatusTimeout.thirtyMinutes => now.add(const Duration(minutes: 30)),
-      StatusTimeout.oneHour => now.add(const Duration(hours: 1)),
-      StatusTimeout.today => DateTime(now.year, now.month, now.day, 23, 59),
-      StatusTimeout.thisWeek => now.add(Duration(days: 7 - now.weekday)),
-      StatusTimeout.dontRemove => null,
-    };
-  }
+  DateTime? _expiryFromTimeout(StatusTimeout timeout) =>
+      timeout.expiryFrom(DateTime.now());
 }
 
 // Private extension to create a new User with a swapped status field.

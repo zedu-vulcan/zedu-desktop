@@ -46,7 +46,7 @@ ScrollPosition signUpScrollPosition(WidgetTester tester) =>
 // buttons. The default test platform (Android) lays the column out taller.
 final linuxOnly = TargetPlatformVariant.only(TargetPlatform.linux);
 
-Finder get termsText => find.textContaining('By Signing up');
+Finder get termsText => find.textContaining('By signing up');
 
 void main() {
   setUpAll(loadAppFonts);

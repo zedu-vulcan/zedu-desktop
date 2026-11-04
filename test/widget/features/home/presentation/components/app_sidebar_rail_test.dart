@@ -66,4 +66,33 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('settings rail button has a tooltip with message "Settings"', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: const Scaffold(
+            body: SizedBox(
+              width: AppSidebarRail.width,
+              height: 600,
+              child: AppSidebarRail(activeType: HomeSidebarType.home),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.ancestor(
+        of: find.byIcon(Icons.settings_outlined),
+        matching: find.byWidgetPredicate(
+          (w) => w is Tooltip && w.message == 'Settings',
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
 }

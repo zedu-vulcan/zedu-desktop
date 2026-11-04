@@ -67,4 +67,21 @@ enum StatusTimeout {
     StatusTimeout.thisWeek => 'This week',
     StatusTimeout.dontRemove => "Don't remove",
   };
+
+  /// When a status set at [now] with this timeout expires, or null when it
+  /// never does. "Today" and "This week" end at 23:59 on the last day of the
+  /// period; the week ends on Sunday.
+  DateTime? expiryFrom(DateTime now) => switch (this) {
+    StatusTimeout.thirtyMinutes => now.add(const Duration(minutes: 30)),
+    StatusTimeout.oneHour => now.add(const Duration(hours: 1)),
+    StatusTimeout.today => DateTime(now.year, now.month, now.day, 23, 59),
+    StatusTimeout.thisWeek => DateTime(
+      now.year,
+      now.month,
+      now.day + (DateTime.sunday - now.weekday),
+      23,
+      59,
+    ),
+    StatusTimeout.dontRemove => null,
+  };
 }
