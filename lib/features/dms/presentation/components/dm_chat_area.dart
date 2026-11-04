@@ -105,6 +105,8 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
         ref
             .read(dmConversationActionsProvider.notifier)
             .togglePinned(conversation.channelId);
+      case 'pinned_messages':
+        await _showPinnedMessages();
       case 'search_in_conversation':
         await _showConversationSearch();
       case 'view_files':
@@ -184,6 +186,55 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
     );
   }
 
+  Future<void> _showPinnedMessages() async {
+    final history = ref.read(
+      chatHistoryProvider(widget.conversation.channelId),
+    );
+    final pinned = history.messages
+        .where(
+          (message) =>
+              message['is_pinned'] == true || message['pinned'] == true,
+        )
+        .toList();
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${widget.conversation.displayName} pinned messages'),
+        content: SizedBox(
+          width: 420,
+          child: pinned.isEmpty
+              ? const Text('No pinned messages in this conversation.')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: pinned.length,
+                  itemBuilder: (context, index) {
+                    final msg = pinned[index] as Map;
+                    return ListTile(
+                      leading: const Icon(Icons.push_pin_outlined),
+                      title: Text(
+                        msg['content']?.toString() ??
+                            msg['message']?.toString() ??
+                            '',
+                      ),
+                      subtitle: Text(
+                        msg['sender_name']?.toString() ??
+                            msg['created_at']?.toString() ??
+                            '',
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showConversationFiles() async {
     final history = ref.read(
       chatHistoryProvider(widget.conversation.channelId),
@@ -225,8 +276,9 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
   }
 
   void _showActionNotice(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
