@@ -10,20 +10,46 @@ class _FakeWorkspaceNotifier extends WorkspaceNotifier {
   );
 }
 
-class _FakeProfileNotifier extends UserProfileNotifier {
+class _FakeAuthNotifier extends AuthNotifier {
   @override
-  UserProfileState build() => const UserProfileState(
-    teamMembers: [
-      TeamMember(
-        id: 'u-1',
-        email: 'ada@zedu.test',
-        role: 'Admin',
-        dateJoined: '2026-01-01',
-        status: TeamMemberStatus.active,
-        name: 'Ada Lovelace',
-      ),
-    ],
+  AuthState build() => AuthState(
+    status: AuthStatus.authenticated,
+    user: User(
+      id: 'u-2',
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'grace@zedu.test',
+      phone: '',
+      username: 'GraceHopper',
+      isVerified: true,
+      isOnboarded: true,
+      createdAt: DateTime.utc(2026, 1, 1),
+      currentOrg: 'org-1',
+      currentOrganisationSlug: 'workspace-a',
+      avatarUrl: '',
+      defaultAvatarUrl: '',
+    ),
   );
+}
+
+class _FakeProfileNotifier extends UserProfileNotifier {
+  _FakeProfileNotifier({this.members = _defaultMembers});
+
+  static const _defaultMembers = [
+    TeamMember(
+      id: 'u-1',
+      email: 'ada@zedu.test',
+      role: 'Admin',
+      dateJoined: '2026-01-01',
+      status: TeamMemberStatus.active,
+      name: 'Ada Lovelace',
+    ),
+  ];
+
+  final List<TeamMember> members;
+
+  @override
+  UserProfileState build() => UserProfileState(teamMembers: members);
 
   @override
   Future<void> load() async {}
@@ -58,6 +84,15 @@ class _FakeFilesRepository implements FilesRepository {
             sharedIn: 'general',
             updatedAt: DateTime(2026, 11, 1),
           ),
+          WorkspaceFile(
+            id: 'f-3',
+            name: 'notes.md',
+            fileType: 'md',
+            size: 512,
+            userId: 'u-2',
+            sharedIn: 'design',
+            updatedAt: DateTime(2026, 11, 2),
+          ),
         ],
       ),
     );
@@ -85,7 +120,11 @@ class _FakeFilesRepository implements FilesRepository {
   }
 }
 
-Future<void> _pump(WidgetTester tester, _FakeFilesRepository repository) async {
+Future<void> _pump(
+  WidgetTester tester,
+  _FakeFilesRepository repository, {
+  List<TeamMember>? members,
+}) async {
   tester.view.physicalSize = const Size(1600, 1000);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -95,7 +134,12 @@ Future<void> _pump(WidgetTester tester, _FakeFilesRepository repository) async {
     ProviderScope(
       overrides: [
         workspaceProvider.overrideWith(_FakeWorkspaceNotifier.new),
-        userProfileNotifierProvider.overrideWith(_FakeProfileNotifier.new),
+        authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
+        userProfileNotifierProvider.overrideWith(
+          () => _FakeProfileNotifier(
+            members: members ?? _FakeProfileNotifier._defaultMembers,
+          ),
+        ),
         filesRepositoryProvider.overrideWithValue(repository),
       ],
       child: buildTestMaterialApp(
@@ -144,6 +188,18 @@ void main() {
     expect(find.text('general'), findsOneWidget);
     expect(find.text('Ada Lovelace'), findsOneWidget);
     expect(find.text('2 KB'), findsOneWidget);
+  });
+
+  testWidgets('the signed-in user is the owner without visiting Settings', (
+    tester,
+  ) async {
+    await _pump(tester, _FakeFilesRepository(), members: const []);
+
+    await tester.tap(find.text('Files').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('notes.md'), findsOneWidget);
+    expect(find.text('Grace Hopper'), findsOneWidget);
   });
 
   testWidgets('a sidebar list loads that list', (tester) async {

@@ -171,13 +171,27 @@ class _Tabs extends ConsumerWidget {
 }
 
 /// Looks up team members' names by user id, for the Owner column.
+///
+/// The team list is loaded by [UserProfileNotifier], so colleagues resolve even
+/// when Files is opened without visiting Settings first. Files the signed-in
+/// user owns fall back to their auth profile, which is always available.
 String Function(String) _ownerNames(WidgetRef ref) {
   final members = ref.watch(userProfileNotifierProvider).teamMembers;
+  final currentUser = ref.watch(authNotifierProvider).user;
   final names = {
     for (final m in members)
       if ((m.name ?? '').trim().isNotEmpty) m.id: m.name!.trim(),
   };
-  return (userId) => names[userId] ?? 'Unknown';
+  final currentUserId = currentUser?.id;
+  final currentUserName = (currentUser?.fullname ?? '').trim();
+  return (userId) {
+    final name = names[userId];
+    if (name != null) return name;
+    if (currentUserId != null && userId == currentUserId) {
+      return currentUserName.isNotEmpty ? currentUserName : 'You';
+    }
+    return 'Unknown';
+  };
 }
 
 class _FoldersSection extends ConsumerWidget {
