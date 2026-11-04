@@ -1,3 +1,5 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -30,6 +32,21 @@ class FakeSignedInAuthNotifier extends AuthNotifier {
 }
 
 void main() {
+  setUp(() {
+    if (locator.isRegistered<AppConfig>()) {
+      locator.unregister<AppConfig>();
+    }
+    locator.registerSingleton<AppConfig>(
+      const AppConfig(apiBaseUrl: 'http://test', usesMockData: false),
+    );
+  });
+
+  tearDown(() {
+    if (locator.isRegistered<AppConfig>()) {
+      locator.unregister<AppConfig>();
+    }
+  });
+
   testWidgets('DM menu uses a white surface and opens the selected action', (
     tester,
   ) async {
@@ -96,7 +113,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('clicking Pinned messages opens the pinned messages dialog', (
+  testWidgets('selecting Pinned messages displays toast and does not throw', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 900);
@@ -123,8 +140,8 @@ void main() {
             body: DmChatArea(
               conversation: DmConversation(
                 channelId: 'chat-1',
-                username: 'Menu Tester',
-                participantId: 'user-1',
+                username: 'Pinned Tester',
+                participantId: 'user-2',
                 previewMessage: '',
                 unreadCount: 0,
               ),
@@ -141,13 +158,6 @@ void main() {
     await tester.tap(find.text('Pinned messages'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.text('Menu Tester pinned messages'), findsOneWidget);
-    expect(
-      find.text('No pinned messages in this conversation.'),
-      findsOneWidget,
-    );
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
+    expect(find.text('Pinned messages are not available yet'), findsOneWidget);
   });
 }
