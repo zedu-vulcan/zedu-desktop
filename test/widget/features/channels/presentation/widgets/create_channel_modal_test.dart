@@ -59,6 +59,17 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('the channel name field is focused when the modal opens', (
+      tester,
+    ) async {
+      await openModal(tester);
+
+      final input = tester.widget<EditableText>(
+        find.byType(EditableText).first,
+      );
+      expect(input.focusNode.hasFocus, isTrue);
+    });
+
     testWidgets('shows the server message when creating fails', (tester) async {
       await openModal(tester);
 

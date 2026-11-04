@@ -97,6 +97,7 @@ class _CreateChannelModalState extends ConsumerState<CreateChannelModal> {
             const SizedBox(height: 8),
             TextField(
               controller: _nameController,
+              autofocus: true,
               decoration: InputDecoration(
                 hintText: 'e.g. plan-budget',
                 border: OutlineInputBorder(
