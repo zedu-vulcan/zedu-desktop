@@ -9,10 +9,7 @@ class _FakeUserProfileNotifier extends UserProfileNotifier {
 
   @override
   UserProfileState build() {
-    return UserProfileState(
-      isLoading: false,
-      teamMembers: _members,
-    );
+    return UserProfileState(isLoading: false, teamMembers: _members);
   }
 }
 
@@ -61,11 +58,7 @@ void main() {
       ],
       child: buildTestMaterialApp(
         const Scaffold(
-          body: SizedBox(
-            width: 1200,
-            height: 900,
-            child: NewGroupChatView(),
-          ),
+          body: SizedBox(width: 1200, height: 900, child: NewGroupChatView()),
         ),
       ),
     );
