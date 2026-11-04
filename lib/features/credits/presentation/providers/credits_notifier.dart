@@ -6,6 +6,10 @@ class CreditsNotifier extends Notifier<CreditsState> {
 
   static const _tag = 'CreditsNotifier';
 
+  /// Identifies the latest [load]. A slower, older load drops its result
+  /// instead of overwriting the newer balance.
+  int _loadCounter = 0;
+
   @override
   CreditsState build() {
     _repository = ref.read(creditsRepositoryProvider);
@@ -14,6 +18,7 @@ class CreditsNotifier extends Notifier<CreditsState> {
 
   Future<void> load({String? orgId}) async {
     if (orgId == null || orgId.isEmpty) return;
+    final loadId = ++_loadCounter;
     state = state.copyWith(
       status: CreditsStatus.loading,
       clearError: true,
@@ -24,6 +29,7 @@ class CreditsNotifier extends Notifier<CreditsState> {
     final usageResult = await _repository.getUsage(orgId);
     final reportResult = await _repository.getUsageReport(orgId);
     final transactionsResult = await _repository.getTransactions(orgId);
+    if (loadId != _loadCounter) return;
 
     String? error;
     var packages = state.packages;
