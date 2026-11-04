@@ -368,7 +368,9 @@ void _loadErrorTests() {
         return page(2, 'm');
       });
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final sub = container.listen(chatHistoryProvider('ch-1'), (_, _) {});
+      addTearDown(sub.close);
+      final notifier = sub.read();
       await pumpEventQueue();
 
       expect(notifier.loadFailed, isTrue);
@@ -387,7 +389,9 @@ void _loadErrorTests() {
         () => mockRepository.getMessages(any(), page: any(named: 'page')),
       ).thenAnswer((_) async => page(2, 'm'));
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final sub = container.listen(chatHistoryProvider('ch-1'), (_, _) {});
+      addTearDown(sub.close);
+      final notifier = sub.read();
       await pumpEventQueue();
 
       expect(notifier.loadFailed, isFalse);
@@ -406,7 +410,9 @@ void _loadErrorTests() {
         return page(1, 'b');
       });
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final sub = container.listen(chatHistoryProvider('ch-1'), (_, _) {});
+      addTearDown(sub.close);
+      final notifier = sub.read();
       await pumpEventQueue();
       await notifier.loadMore();
 
@@ -621,7 +627,9 @@ void _clearHistoryTests() {
         ],
       );
       addTearDown(container.dispose);
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final sub = container.listen(chatHistoryProvider('ch-1'), (_, _) {});
+      addTearDown(sub.close);
+      final notifier = sub.read();
       await pumpEventQueue();
       return notifier;
     }
