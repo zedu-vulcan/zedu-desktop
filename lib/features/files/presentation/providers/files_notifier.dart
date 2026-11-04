@@ -88,6 +88,10 @@ class FilesNotifier extends Notifier<FilesState> {
 class FilesListNotifier extends AsyncNotifier<FilesPage> {
   @override
   Future<FilesPage> build() async {
+    // The repository reads the active workspace while making this request.
+    // Depend on its identity so equal filters do not reuse another
+    // workspace's result.
+    ref.watch(currentOrgIdProvider);
     final query = ref.watch(filesProvider.select((s) => s.query));
     final result = await ref.read(filesRepositoryProvider).fetchFiles(query);
     return switch (result) {
@@ -101,6 +105,9 @@ class FilesListNotifier extends AsyncNotifier<FilesPage> {
 class FoldersListNotifier extends AsyncNotifier<FoldersPage> {
   @override
   Future<FoldersPage> build() async {
+    // Folders can have the same view, parent and page in two workspaces.
+    // Include the workspace in the dependency set to force a fresh request.
+    ref.watch(currentOrgIdProvider);
     final (view, parentId, page) = ref.watch(
       filesProvider.select((s) => (s.view, s.folderId, s.folderPage)),
     );

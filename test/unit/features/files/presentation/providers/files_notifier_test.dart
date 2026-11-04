@@ -8,6 +8,17 @@ import '../../../../../helpers/helpers.dart';
 const _docs = FileFolder(id: 'docs', name: 'docs');
 const _drafts = FileFolder(id: 'drafts', name: 'drafts');
 
+class _CurrentOrg extends Notifier<String> {
+  @override
+  String build() => 'org-a';
+
+  void select(String orgId) => state = orgId;
+}
+
+final _currentOrgProvider = NotifierProvider<_CurrentOrg, String>(
+  _CurrentOrg.new,
+);
+
 /// A file in the temp folder. On desktop XFile takes its name from the
 /// path, split on the platform's separator, so the path must use it.
 XFile _file(String name) =>
@@ -75,6 +86,36 @@ void main() {
 
     expect(state().sort, FilesSort.oldestFirst);
     expect(state().query, before);
+  });
+
+  test('refetches files and folders when the workspace changes', () async {
+    final repository = _WorkspaceAwareRepository();
+    final workspaceContainer = ProviderContainer(
+      overrides: [
+        currentOrgIdProvider.overrideWith(
+          (ref) => ref.watch(_currentOrgProvider),
+        ),
+        filesRepositoryProvider.overrideWithValue(repository),
+      ],
+    );
+    addTearDown(workspaceContainer.dispose);
+    workspaceContainer.listen(filesListProvider, (_, _) {});
+    workspaceContainer.listen(foldersListProvider, (_, _) {});
+
+    await Future.wait([
+      workspaceContainer.read(filesListProvider.future),
+      workspaceContainer.read(foldersListProvider.future),
+    ]);
+
+    workspaceContainer.read(_currentOrgProvider.notifier).select('org-b');
+
+    await Future.wait([
+      workspaceContainer.read(filesListProvider.future),
+      workspaceContainer.read(foldersListProvider.future),
+    ]);
+
+    expect(repository.filesRequests, 2);
+    expect(repository.foldersRequests, 2);
   });
 
   group('uploadFiles', () {
@@ -149,4 +190,28 @@ class _UploadRepository implements FilesRepository {
     required String orgId,
     String? parentId,
   }) async => const Success(null);
+}
+
+class _WorkspaceAwareRepository implements FilesRepository {
+  int filesRequests = 0;
+  int foldersRequests = 0;
+
+  @override
+  Future<Result<FilesPage>> fetchFiles(FilesQuery query) async {
+    filesRequests++;
+    return const Success(FilesPage(files: []));
+  }
+
+  @override
+  Future<Result<FoldersPage>> fetchFolders({
+    required FilesScope view,
+    String? parentId,
+    int page = 1,
+  }) async {
+    foldersRequests++;
+    return const Success(FoldersPage(folders: []));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
