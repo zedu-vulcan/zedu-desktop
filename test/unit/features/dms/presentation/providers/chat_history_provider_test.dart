@@ -23,6 +23,7 @@ void main() {
   _retryTests();
   _clearHistoryTests();
   _loadErrorTests();
+  _paginationDeduplicationTests();
   group('ChatHistoryNotifier.saveEdit', () {
     late MockDmRepository mockRepository;
     late ProviderContainer container;
@@ -368,7 +369,7 @@ void _loadErrorTests() {
         return page(2, 'm');
       });
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, __) {}).read();
       await pumpEventQueue();
 
       expect(notifier.loadFailed, isTrue);
@@ -387,7 +388,7 @@ void _loadErrorTests() {
         () => mockRepository.getMessages(any(), page: any(named: 'page')),
       ).thenAnswer((_) async => page(2, 'm'));
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, __) {}).read();
       await pumpEventQueue();
 
       expect(notifier.loadFailed, isFalse);
@@ -406,7 +407,7 @@ void _loadErrorTests() {
         return page(1, 'b');
       });
 
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, __) {}).read();
       await pumpEventQueue();
       await notifier.loadMore();
 
@@ -621,7 +622,7 @@ void _clearHistoryTests() {
         ],
       );
       addTearDown(container.dispose);
-      final notifier = container.read(chatHistoryProvider('ch-1'));
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, __) {}).read();
       await pumpEventQueue();
       return notifier;
     }
@@ -670,6 +671,110 @@ void _clearHistoryTests() {
       await first.clearLocalHistory();
 
       expect(storage.values.keys, ['dm_history_cleared_u1_ch-1']);
+    });
+  });
+}
+
+void _paginationDeduplicationTests() {
+  group('ChatHistoryNotifier.loadMore deduplication', () {
+    late MockDmRepository mockRepository;
+    late ProviderContainer container;
+
+    setUp(() {
+      mockRepository = MockDmRepository();
+      container = ProviderContainer(
+        overrides: [dmRepositoryProvider.overrideWithValue(mockRepository)],
+      );
+    });
+
+    tearDown(() => container.dispose());
+
+    test('deduplicates boundary messages shifted into next page after new arrival', () async {
+      final page1 = List.generate(
+        DmRepository.pageSize,
+        (i) => {'id': 'm', 'content': 'msg '},
+      );
+      final page2 = [
+        {'id': 'm1', 'content': 'msg 1'}, // boundary message shifted from page 1
+        {'id': 'm0', 'content': 'msg 0'},
+        {'id': 'm-1', 'content': 'msg -1'},
+      ];
+
+      when(() => mockRepository.getMessages(any(), page: 1))
+          .thenAnswer((_) async => List.from(page1));
+      when(() => mockRepository.getMessages(any(), page: 2))
+          .thenAnswer((_) async => List.from(page2));
+
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, _) {}).read();
+      await pumpEventQueue();
+
+      expect(notifier.messages.length, 20);
+      expect(notifier.messages.first['id'], 'm20');
+      expect(notifier.messages.last['id'], 'm1');
+
+      // Now load page 2
+      await notifier.loadMore();
+
+      final ids = notifier.messages.map((m) => m['id']).toList();
+      // Verify m1 appears exactly once
+      expect(ids.where((id) => id == 'm1').length, 1);
+      expect(ids.contains('m0'), isTrue);
+      expect(ids.contains('m-1'), isTrue);
+      expect(ids.length, 22);
+    });
+
+    test('deduplicates multiple duplicate ids within page response', () async {
+      when(() => mockRepository.getMessages(any(), page: 1)).thenAnswer(
+        (_) async => List.generate(
+          DmRepository.pageSize,
+          (i) => {'id': 'init-', 'content': 'init '},
+        ),
+      );
+      when(() => mockRepository.getMessages(any(), page: 2)).thenAnswer((_) async => [
+            {'id': 'dup-1', 'content': 'one'},
+            {'id': 'dup-1', 'content': 'one duplicate'},
+            {'id': 'unique-2', 'content': 'two'},
+          ]);
+
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, _) {}).read();
+      await pumpEventQueue();
+
+      await notifier.loadMore();
+
+      final ids = notifier.messages.map((m) => m['id']).toList();
+      expect(ids.where((id) => id == 'dup-1').length, 1);
+      expect(ids.contains('dup-1'), isTrue);
+      expect(ids.contains('unique-2'), isTrue);
+      expect(ids.length, DmRepository.pageSize + 2);
+    });
+
+    test('preserves hasMore based on server page size even when items are deduplicated', () async {
+      final page1 = List.generate(
+        DmRepository.pageSize,
+        (i) => {'id': 'p1_', 'content': 'p1 msg '},
+      );
+      // Full page response where first item is already in page 1
+      final page2 = [
+        {'id': 'p1_', 'content': 'overlap'},
+        ...List.generate(
+          DmRepository.pageSize - 1,
+          (i) => {'id': 'p2_', 'content': 'p2 msg '},
+        ),
+      ];
+
+      when(() => mockRepository.getMessages(any(), page: 1))
+          .thenAnswer((_) async => List.from(page1));
+      when(() => mockRepository.getMessages(any(), page: 2))
+          .thenAnswer((_) async => List.from(page2));
+
+      final notifier = container.listen(chatHistoryProvider('ch-1'), (_, _) {}).read();
+      await pumpEventQueue();
+
+      await notifier.loadMore();
+
+      expect(notifier.hasMore, isTrue);
+      expect(notifier.page, 2);
+      expect(notifier.messages.length, (DmRepository.pageSize * 2) - 1);
     });
   });
 }
