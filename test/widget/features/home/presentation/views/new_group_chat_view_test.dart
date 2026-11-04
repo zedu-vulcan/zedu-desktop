@@ -18,29 +18,33 @@ class _FakeAuthNotifier extends AuthNotifier {
   _FakeAuthNotifier([this._user]);
 
   @override
-  AuthState build() => AuthState(
-        status: _user != null
-            ? AuthStatus.authenticated
-            : AuthStatus.unauthenticated,
-        user: _user,
-      );
+  AuthState build() {
+    return AuthState(
+      status: _user != null
+          ? AuthStatus.authenticated
+          : AuthStatus.unauthenticated,
+      user: _user,
+    );
+  }
 }
 
-User _buildTestUser({required String id, required String email}) => User(
-      id: id,
-      firstName: 'Test',
-      lastName: 'User',
-      email: email,
-      phone: '',
-      username: 'testuser',
-      isVerified: true,
-      isOnboarded: true,
-      createdAt: DateTime.utc(2026, 1, 1),
-      currentOrg: 'test-org',
-      currentOrganisationSlug: 'test-org',
-      avatarUrl: '',
-      defaultAvatarUrl: '',
-    );
+User _buildTestUser({required String id, required String email}) {
+  return User(
+    id: id,
+    firstName: 'Test',
+    lastName: 'User',
+    email: email,
+    phone: '',
+    username: 'testuser',
+    isVerified: true,
+    isOnboarded: true,
+    createdAt: DateTime.utc(2026, 1, 1),
+    currentOrg: 'test-org',
+    currentOrganisationSlug: 'test-org',
+    avatarUrl: '',
+    defaultAvatarUrl: '',
+  );
+}
 
 void main() {
   final testMembers = [

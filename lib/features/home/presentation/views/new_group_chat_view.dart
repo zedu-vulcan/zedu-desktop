@@ -54,13 +54,9 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
     setState(() {
       if (query.isEmpty) {
         // Show all members that are not already selected
-        _filteredMembers = allMembers
-            .where(
-              (m) =>
-                  !isSelf(m) &&
-                  !_selectedMembers.any((s) => s.id == m.id),
-            )
-            .toList();
+        _filteredMembers = allMembers.where((m) {
+          return !isSelf(m) && !_selectedMembers.any((s) => s.id == m.id);
+        }).toList();
       } else {
         _filteredMembers = allMembers.where((m) {
           if (isSelf(m)) return false;
