@@ -754,7 +754,15 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         }
         validFiles.add(file);
       } catch (e) {
-        validFiles.add(file);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                "Couldn't read ${file.path.split(RegExp(r'[\\/]')).last}.",
+              ),
+            ),
+          );
+        }
       }
     }
     setState(() {
