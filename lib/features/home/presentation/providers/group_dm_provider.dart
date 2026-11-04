@@ -164,13 +164,9 @@ class GroupDmNotifier extends Notifier<List<GroupDM>> {
   Future<void> _flushOfflineQueue() async {
     if (_offlineQueue.isEmpty) return;
 
-    // Simulate sending queued messages
-    await Future<void>.delayed(const Duration(milliseconds: 500));
-
-    // Just clear the queue for the mock and assume they were sent
-    // We already appended "Pending..." so let's clean them up
-    // In a real app we'd replace the pending messages with real ones
-    _offlineQueue.clear();
+    // Do not clear queued messages until actual
+    // delivery has been confirmed.
+    debugPrint('Group DM messages are still pending delivery.');
   }
 
   void renameGroupDm(String groupId, String newName) {
