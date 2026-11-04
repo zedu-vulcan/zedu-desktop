@@ -34,7 +34,7 @@ class _Repository implements FilesRepository {
   }) async => const Success(FoldersPage(folders: []));
 
   @override
-  Future<Result<WorkspaceFile>> uploadFile(XFile file) =>
+  Future<Result<WorkspaceFile>> uploadFile(XFile file, {String? folderId}) =>
       throw StateError('Opening a file must not upload it');
 
   @override

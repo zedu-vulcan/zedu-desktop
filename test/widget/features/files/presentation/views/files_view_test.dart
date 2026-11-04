@@ -94,8 +94,10 @@ class _FakeFilesRepository implements FilesRepository {
   }
 
   @override
-  Future<Result<WorkspaceFile>> uploadFile(XFile file) async =>
-      Success(WorkspaceFile(id: 'up', name: file.name));
+  Future<Result<WorkspaceFile>> uploadFile(
+    XFile file, {
+    String? folderId,
+  }) async => Success(WorkspaceFile(id: 'up', name: file.name));
 
   @override
   Future<Result<void>> createFolder({

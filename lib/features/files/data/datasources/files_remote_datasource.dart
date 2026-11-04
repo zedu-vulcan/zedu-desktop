@@ -10,7 +10,7 @@ abstract class FilesRemoteDataSource {
     int page = 1,
   });
 
-  Future<WorkspaceFile> uploadFile(XFile file);
+  Future<WorkspaceFile> uploadFile(XFile file, {String? folderId});
 
   Future<void> createFolder({
     required String name,
@@ -100,15 +100,20 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     );
   }
 
-  /// Sends one file as the `files` part, as the web app does. The server
-  /// files it at the top level of the user's files.
+  /// Sends one file as the `files` part, as the web app does. With
+  /// [folderId] the server files it in that folder (the `folder_id` field);
+  /// without it, at the top level of the user's files.
   @override
-  Future<WorkspaceFile> uploadFile(XFile file) async {
+  Future<WorkspaceFile> uploadFile(XFile file, {String? folderId}) async {
     final mime = file.mimeType;
     final type = mime != null && mime.contains('/')
         ? DioMediaType.parse(mime)
         : null;
-    final formData = FormData()
+    final formData = FormData();
+    if (folderId != null) {
+      formData.fields.add(MapEntry('folder_id', folderId));
+    }
+    formData
       ..files.add(
         MapEntry(
           'files',

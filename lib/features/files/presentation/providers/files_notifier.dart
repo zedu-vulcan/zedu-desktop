@@ -140,13 +140,15 @@ class FilesActionsNotifier extends Notifier<FilesActionsState> {
   @override
   FilesActionsState build() => const FilesActionsState();
 
-  /// Uploads [files] one at a time, as the web app does, then shows the
-  /// Files tab at the top level, where the server puts uploads.
+  /// Uploads [files] one at a time, as the web app does. They go into the
+  /// open folder, which stays open so the new files show there. With no
+  /// folder open they go to the top level, and the Files tab shows them.
   Future<FilesUploadOutcome> uploadFiles(List<XFile> files) async {
     if (files.isEmpty || state.isUploading) {
       return const FilesUploadOutcome(uploaded: 0, failedNames: []);
     }
     final repository = ref.read(filesRepositoryProvider);
+    final folderId = ref.read(filesProvider).folderId;
     var uploaded = 0;
     final failed = <String>[];
     state = FilesActionsState(
@@ -154,7 +156,7 @@ class FilesActionsNotifier extends Notifier<FilesActionsState> {
       isCreatingFolder: state.isCreatingFolder,
     );
     for (final file in files) {
-      final result = await repository.uploadFile(file);
+      final result = await repository.uploadFile(file, folderId: folderId);
       if (!ref.mounted) break;
       switch (result) {
         case Success():
@@ -169,13 +171,19 @@ class FilesActionsNotifier extends Notifier<FilesActionsState> {
     }
     if (ref.mounted && uploaded > 0) {
       final files = ref.read(filesProvider.notifier);
-      if (ref.read(filesProvider).view == FilesScope.trash) {
-        files.selectView(FilesScope.all);
+      if (folderId == null) {
+        if (ref.read(filesProvider).view == FilesScope.trash) {
+          files.selectView(FilesScope.all);
+        }
+        files
+          ..goToDepth(0)
+          ..setTab(FilesTab.files)
+          ..setPage(1);
+      } else {
+        files
+          ..setTab(FilesTab.files)
+          ..setPage(1);
       }
-      files
-        ..goToDepth(0)
-        ..setTab(FilesTab.files)
-        ..setPage(1);
       ref.invalidate(filesListProvider);
     }
     return FilesUploadOutcome(uploaded: uploaded, failedNames: failed);

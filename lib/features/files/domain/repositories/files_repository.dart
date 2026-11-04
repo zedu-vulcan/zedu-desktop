@@ -11,8 +11,9 @@ abstract class FilesRepository {
     int page = 1,
   });
 
-  /// Uploads [file] to the signed-in user's files.
-  Future<Result<WorkspaceFile>> uploadFile(XFile file);
+  /// Uploads [file] to the signed-in user's files, into the folder with id
+  /// [folderId] or, when null, at the top level.
+  Future<Result<WorkspaceFile>> uploadFile(XFile file, {String? folderId});
 
   /// Creates a folder inside [parentId], or at the top level when null.
   Future<Result<void>> createFolder({
