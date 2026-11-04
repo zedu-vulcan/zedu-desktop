@@ -46,10 +46,10 @@ class _RoleCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              const Icon(
+              Icon(
                 Icons.keyboard_arrow_right,
                 size: 20,
-                color: Color(0xFF6B7280),
+                color: context.colors.textHint,
               ),
             ],
           ),
@@ -57,7 +57,7 @@ class _RoleCard extends StatelessWidget {
           Text(
             role.description,
             style: context.textTheme.bodySmall?.copyWith(
-              color: const Color(0xFF6B7280),
+              color: context.colors.textSecondary,
             ),
           ),
         ],
