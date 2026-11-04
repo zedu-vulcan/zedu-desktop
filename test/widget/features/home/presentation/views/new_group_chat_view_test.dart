@@ -19,7 +19,9 @@ class _FakeAuthNotifier extends AuthNotifier {
 
   @override
   AuthState build() => AuthState(
-        status: _user != null ? AuthStatus.authenticated : AuthStatus.unauthenticated,
+        status: _user != null
+            ? AuthStatus.authenticated
+            : AuthStatus.unauthenticated,
         user: _user,
       );
 }
@@ -136,7 +138,10 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final currentUser = _buildTestUser(id: 'member-4', email: 'alice@zedu.test');
+      final currentUser = _buildTestUser(
+        id: 'member-4',
+        email: 'alice@zedu.test',
+      );
 
       await tester.pumpWidget(buildWidget(currentUser: currentUser));
       await tester.pumpAndSettle();

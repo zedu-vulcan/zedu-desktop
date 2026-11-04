@@ -44,7 +44,8 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
 
     bool isSelf(TeamMember m) {
       if (currentUserId != null && m.id == currentUserId) return true;
-      if (currentUserEmail != null && m.email.toLowerCase() == currentUserEmail) {
+      if (currentUserEmail != null &&
+          m.email.toLowerCase() == currentUserEmail) {
         return true;
       }
       return false;
@@ -54,7 +55,11 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
       if (query.isEmpty) {
         // Show all members that are not already selected
         _filteredMembers = allMembers
-            .where((m) => !isSelf(m) && !_selectedMembers.any((s) => s.id == m.id))
+            .where(
+              (m) =>
+                  !isSelf(m) &&
+                  !_selectedMembers.any((s) => s.id == m.id),
+            )
             .toList();
       } else {
         _filteredMembers = allMembers.where((m) {

@@ -75,7 +75,7 @@ void main() {
   }
 
   Future<void> attachFile(WidgetTester tester) async {
-    // addFiles checks the file on disk, which needs real async in a widget test.
+    // addFiles checks file on disk, which needs real async in widget test.
     await tester.runAsync(() async {
       final dir = await Directory.systemTemp.createTemp('send_icon_test');
       addTearDown(() => dir.deleteSync(recursive: true));
