@@ -5,7 +5,7 @@ import '../../../../../helpers/helpers.dart';
 
 void main() {
   for (final brightness in Brightness.values) {
-    testWidgets('section title and subtitle use the palette in ${brightness.name} mode', (
+    testWidgets('title and subtitle use palette in ${brightness.name} mode', (
       tester,
     ) async {
       await tester.pumpWidget(
