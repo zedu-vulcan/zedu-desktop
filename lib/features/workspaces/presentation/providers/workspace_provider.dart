@@ -6,14 +6,22 @@ class WorkspaceNotifier extends Notifier<WorkspaceState> {
 
   int _latestSwitchId = 0;
   bool _isSwitchPending = false;
+  int _generation = 0;
 
   @override
   WorkspaceState build() {
-    Future.microtask(fetchWorkspaces);
+    final generation = ++_generation;
+    ref.onDispose(() => _generation++);
+    Future.microtask(() => _fetchWorkspaces(generation));
     return const WorkspaceState(isLoading: true);
   }
 
-  Future<void> fetchWorkspaces() async {
+  bool _isCurrent(int generation) => ref.mounted && generation == _generation;
+
+  Future<void> fetchWorkspaces() => _fetchWorkspaces(_generation);
+
+  Future<void> _fetchWorkspaces(int generation) async {
+    if (!_isCurrent(generation)) return;
     if (locator<AppConfig>().usesMockData) {
       state = _mockState();
       return;
@@ -29,6 +37,7 @@ class WorkspaceNotifier extends Notifier<WorkspaceState> {
       final response = await api.get<Map<String, dynamic>>(
         path: '/users/organisations',
       );
+      if (!_isCurrent(generation)) return;
       final data = response.data['data'] as List<dynamic>? ?? [];
 
       final List<Workspace> workspaces = [];
@@ -74,6 +83,7 @@ class WorkspaceNotifier extends Notifier<WorkspaceState> {
         selectedWorkspace: selected,
       );
     } catch (e, stackTrace) {
+      if (!_isCurrent(generation)) return;
       AppLogger.e(
         'Failed to load organisations',
         tag: 'WorkspaceNotifier',
