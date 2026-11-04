@@ -36,6 +36,13 @@ class FakeAuthNotifier extends AuthNotifier {
     state = state.copyWith(isLoading: false);
   }
 
+  bool? lastGoogleRememberMe;
+
+  @override
+  Future<void> loginWithGoogle({bool rememberMe = true}) async {
+    lastGoogleRememberMe = rememberMe;
+  }
+
   @override
   Future<void> logout() async {
     state = const AuthState(status: AuthStatus.unauthenticated);
@@ -495,6 +502,26 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(notifier.lastRememberMe, ticked);
+      });
+
+      testWidgets('passes Remember me = $ticked to Google sign-in', (
+        tester,
+      ) async {
+        final notifier = FakeAuthNotifier();
+        await pumpDesktopLogin(tester, notifier);
+
+        if (ticked) {
+          await tester.ensureVisible(find.byType(Checkbox));
+          await tester.tap(find.byType(Checkbox));
+          await tester.pump();
+        }
+
+        final googleButton = socialButton('Sign in with Google');
+        await tester.ensureVisible(googleButton);
+        await tester.tap(googleButton);
+        await tester.pump();
+
+        expect(notifier.lastGoogleRememberMe, ticked);
       });
     }
 
