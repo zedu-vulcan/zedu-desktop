@@ -236,6 +236,9 @@ class _WorkspaceListItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final unreadLabel = workspace.unreadCount > 99
+        ? '99+'
+        : '${workspace.unreadCount}';
 
     return InkWell(
       onTap: onTap,
@@ -282,7 +285,7 @@ class _WorkspaceListItem extends StatelessWidget {
                         border: Border.all(color: colors.background, width: 2),
                       ),
                       child: Text(
-                        '${workspace.unreadCount}',
+                        unreadLabel,
                         style: TextStyle(
                           color: colors.onPrimary,
                           fontSize: 8,

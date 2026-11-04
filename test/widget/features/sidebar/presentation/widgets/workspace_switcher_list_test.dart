@@ -77,6 +77,18 @@ void main() {
         expect(find.text('🚀'), findsOneWidget);
       },
     );
+
+    testWidgets('caps large workspace unread counts at 99+', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 0.5;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(buildLargeUnreadSwitcherUnderTest());
+      await tester.tap(find.text('Open menu'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('99+'), findsOneWidget);
+      expect(find.text('120'), findsNothing);
+    });
   });
 }
 
@@ -116,6 +128,52 @@ Widget buildEmptySwitcherUnderTest() {
 
   return ProviderScope(
     overrides: [workspaceProvider.overrideWith(FakeEmptyWorkspaceNotifier.new)],
+    child: MaterialApp.router(routerConfig: router),
+  );
+}
+
+class FakeLargeUnreadWorkspaceNotifier extends WorkspaceNotifier {
+  @override
+  WorkspaceState build() => const WorkspaceState(
+    workspaces: [
+      Workspace(id: '1', name: 'Acme', avatar: 'A', unreadCount: 120),
+    ],
+    selectedWorkspace: Workspace(
+      id: '1',
+      name: 'Acme',
+      avatar: 'A',
+      unreadCount: 120,
+    ),
+  );
+}
+
+Widget buildLargeUnreadSwitcherUnderTest() {
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => const Align(
+                  alignment: Alignment.topLeft,
+                  child: WorkspaceSwitcherList(),
+                ),
+              ),
+              child: const Text('Open menu'),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+
+  return ProviderScope(
+    overrides: [
+      workspaceProvider.overrideWith(FakeLargeUnreadWorkspaceNotifier.new),
+    ],
     child: MaterialApp.router(routerConfig: router),
   );
 }
