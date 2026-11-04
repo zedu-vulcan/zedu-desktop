@@ -1,7 +1,12 @@
 import 'package:zedu/core/core.dart';
 
-import '../../data/models/workspace.dart';
+import '../../data/data.dart';
 import 'workspace_state.dart';
+
+final workspaceRemoteDataSourceProvider = Provider<WorkspaceRemoteDataSource>(
+  (ref) =>
+      WorkspaceRemoteDataSourceImpl(apiBaseService: locator<ApiBaseService>()),
+);
 
 class WorkspaceNotifier extends Notifier<WorkspaceState> {
   static const loadErrorMessage = "Couldn't load your organisations";
@@ -24,25 +29,9 @@ class WorkspaceNotifier extends Notifier<WorkspaceState> {
       isLoading: true,
     );
     try {
-      final api = locator<ApiBaseService>();
-      final response = await api.get<Map<String, dynamic>>(
-        path: '/users/organisations',
-      );
-      final data = response.data['data'] as List<dynamic>? ?? [];
-
-      final List<Workspace> workspaces = [];
-      for (var item in data) {
-        if (item is Map<String, dynamic>) {
-          workspaces.add(
-            Workspace(
-              id: item['id'] as String? ?? '1',
-              name: item['name'] as String? ?? 'Workspace',
-              avatar: item['logo_url'] as String? ?? '',
-              channelsCount: (item['channels_count'] as num?)?.toInt() ?? 0,
-            ),
-          );
-        }
-      }
+      final workspaces = await ref
+          .read(workspaceRemoteDataSourceProvider)
+          .getOrganisations();
 
       // Keep the current selection if it's still in the list (e.g. an org
       // created while this request was in flight).
