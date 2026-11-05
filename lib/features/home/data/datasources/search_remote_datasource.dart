@@ -56,25 +56,28 @@ class SearchRemoteDataSourceImpl implements SearchRemoteDataSource {
         ? Map<String, dynamic>.from(group['channel'] as Map)
         : const <String, dynamic>{};
 
-    for (final rawMessage in rawMessages.whereType<Map>()) {
+    for (final rawMessage in rawMessages.whereType<Map<dynamic, dynamic>>()) {
       final message = Map<String, dynamic>.from(rawMessage);
       yield SearchResultModel(
-        id: message['message_id']?.toString() ??
+        id:
+            message['message_id']?.toString() ??
             message['id']?.toString() ??
             '',
-        content: message['message']?.toString() ??
+        content:
+            message['message']?.toString() ??
             message['content']?.toString() ??
             '',
-        channelId: channel['channel_id']?.toString() ??
+        channelId:
+            channel['channel_id']?.toString() ??
             channel['id']?.toString() ??
             '',
-        channelName: channel['channel_name']?.toString() ??
+        channelName:
+            channel['channel_name']?.toString() ??
             channel['name']?.toString() ??
             '',
         channelType: channel['channel_type']?.toString(),
-        senderName: user['user_name']?.toString() ??
-            user['name']?.toString() ??
-            '',
+        senderName:
+            user['user_name']?.toString() ?? user['name']?.toString() ?? '',
         senderAvatarUrl: user['avatar_url']?.toString(),
         createdAt: DateTime.tryParse(
           message['timestamp']?.toString() ??
