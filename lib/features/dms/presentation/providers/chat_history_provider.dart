@@ -10,6 +10,10 @@ class ChatHistoryNotifier extends ChangeNotifier {
   bool hasMore = true;
   int page = 1;
   bool _isHistoryClearedLocally = false;
+  String? loadError;
+  bool get hasLoadError => loadError != null;
+  String? loadMoreError;
+  bool get hasLoadMoreError => loadMoreError != null;
 
   String? editingMessageId;
   String? _editingOriginalContent;
@@ -60,19 +64,27 @@ class ChatHistoryNotifier extends ChangeNotifier {
   }
 
   Future<void> _loadInitial() async {
+    isLoading = true;
+    loadError = null;
+    notifyListeners();
+
     try {
       final repository = ref.read(dmRepositoryProvider);
       messages = await repository.getMessages(channelId, page: 1);
       hasMore = messages.length >= DmRepository.pageSize;
       page = 1;
-    } catch (_) {
+      loadError = null;
+      // Start polling for new messages only when initial load succeeds.
+      _startPolling();
+    } catch (e) {
+      loadError = e.toString();
     } finally {
       isLoading = false;
       notifyListeners();
     }
-    // Start polling for new messages now that the initial load is done.
-    _startPolling();
   }
+
+  Future<void> retryInitialLoad() => _loadInitial();
 
   // ── Realtime notification polling ────────────────────────────────────────────
 
@@ -93,9 +105,11 @@ class ChatHistoryNotifier extends ChangeNotifier {
     }
 
     // Poll every 10 seconds for new messages.
-    _pollingTimer = Stream<int>.periodic(const Duration(seconds: 10)).listen((
-      _,
-    ) {
+    (_pollingTimer as dynamic)?.cancel();
+    _pollingTimer = Stream<int>.periodic(
+      const Duration(seconds: 10),
+      (i) => i,
+    ).listen((_) {
       _pollForNewMessages();
     });
   }
@@ -150,6 +164,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
     if (isLoading || !hasMore) return;
 
     isLoading = true;
+    loadMoreError = null;
     notifyListeners();
 
     try {
@@ -163,12 +178,16 @@ class ChatHistoryNotifier extends ChangeNotifier {
       messages = [...messages, ...newMessages];
       hasMore = newMessages.length >= DmRepository.pageSize;
       page = nextPage;
-    } catch (_) {
+      loadMoreError = null;
+    } catch (e) {
+      loadMoreError = e.toString();
     } finally {
       isLoading = false;
       notifyListeners();
     }
   }
+
+  Future<void> retryLoadMore() => loadMore();
 
   Future<void> sendMessage(
     String content, {

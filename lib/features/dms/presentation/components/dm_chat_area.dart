@@ -364,6 +364,47 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                       );
                       final messages = historyState.messages;
 
+                      if (historyState.hasLoadError && messages.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.error_outline, size: 48, color: colors.error),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Failed to load conversation',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: colors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  historyState.loadError ?? 'Something went wrong.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 13, color: colors.textHint),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  onPressed: () => ref
+                                      .read(
+                                        chatHistoryProvider(
+                                          widget.conversation.channelId,
+                                        ),
+                                      )
+                                      .retryInitialLoad(),
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
                       // SelectionArea makes every Text.rich descendant
                       // (see _CopyableBubble) selectable and copyable with
                       // the standard drag-select / Ctrl+C affordances.
@@ -412,6 +453,27 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
                                     padding: EdgeInsets.symmetric(vertical: 16),
                                     child: Center(
                                       child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                ),
+                              if (historyState.hasLoadMoreError)
+                                SliverToBoxAdapter(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Center(
+                                      child: TextButton.icon(
+                                        onPressed: () => ref
+                                            .read(
+                                              chatHistoryProvider(
+                                                widget.conversation.channelId,
+                                              ),
+                                            )
+                                            .retryLoadMore(),
+                                        icon: const Icon(Icons.refresh, size: 16),
+                                        label: const Text(
+                                          'Failed to load older messages. Tap to retry.',
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
