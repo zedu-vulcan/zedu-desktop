@@ -72,7 +72,9 @@ Future<void> _pumpWithMentionList(
       ),
     ),
   );
-  await tester.tap(find.byType(TextField));
+  // Tapping only focuses the field; the keyboard has to be opened before the
+  // text input connection exists.
+  await tester.showKeyboard(find.byType(TextField));
   await tester.enterText(find.byType(TextField), '@');
   await tester.pump();
 }
