@@ -2,9 +2,6 @@ import 'package:zedu/core/core.dart';
 
 import 'package:zedu/features/features.dart';
 
-import '../../data/data.dart';
-import 'workspace_state.dart';
-
 final workspaceRemoteDataSourceProvider = Provider<WorkspaceRemoteDataSource>(
   (ref) =>
       WorkspaceRemoteDataSourceImpl(apiBaseService: locator<ApiBaseService>()),
