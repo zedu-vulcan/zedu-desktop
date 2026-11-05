@@ -15,10 +15,16 @@ const String kDefaultDesktopGoogleClientId =
 /// The website's Contact Sales page, opened from the Enterprise plan.
 const String kDefaultContactSalesUrl = 'https://zedu.chat/contact-sales';
 
+/// Default Realtime WebSocket URL; applies when `REALTIME_URL` comes from neither
+/// `--dart-define` nor `.env`.
+const String kDefaultRealtimeUrl =
+    'wss://realtime.staging.zedu.chat/connection/websocket';
+
 class AppConfig {
   const AppConfig({
     required this.apiBaseUrl,
     required this.usesMockData,
+    this.realtimeUrl = kDefaultRealtimeUrl,
     this.googleClientId = kDefaultDesktopGoogleClientId,
     this.googleClientSecret = '',
     this.contactSalesUrl = kDefaultContactSalesUrl,
@@ -31,14 +37,27 @@ class AppConfig {
   /// defaults. See [String.fromEnvironment](https://api.flutter.dev/flutter/dart-ui/String/String.fromEnvironment.html).
   factory AppConfig.fromEnvironment() {
     const defineApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+    const defineRealtimeUrl = String.fromEnvironment('REALTIME_URL');
     const defineUsesMock = String.fromEnvironment('USE_MOCK_DATA');
     const defineClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
     const defineClientSecret = String.fromEnvironment('GOOGLE_CLIENT_SECRET');
 
-    final envApiBaseUrl = dotenv.maybeGet('API_BASE_URL')?.trim();
-    final envUsesMock = dotenv.maybeGet('USE_MOCK_DATA')?.trim();
-    final envClientId = dotenv.maybeGet('GOOGLE_CLIENT_ID')?.trim();
-    final envClientSecret = dotenv.maybeGet('GOOGLE_CLIENT_SECRET')?.trim();
+    final isLoaded = dotenv.isInitialized;
+    final envApiBaseUrl = isLoaded
+        ? dotenv.maybeGet('API_BASE_URL')?.trim()
+        : null;
+    final envRealtimeUrl = isLoaded
+        ? dotenv.maybeGet('REALTIME_URL')?.trim()
+        : null;
+    final envUsesMock = isLoaded
+        ? dotenv.maybeGet('USE_MOCK_DATA')?.trim()
+        : null;
+    final envClientId = isLoaded
+        ? dotenv.maybeGet('GOOGLE_CLIENT_ID')?.trim()
+        : null;
+    final envClientSecret = isLoaded
+        ? dotenv.maybeGet('GOOGLE_CLIENT_SECRET')?.trim()
+        : null;
 
     // Teams point the app at their own backend via --dart-define or .env; Zedu staging is the default.
     String apiBaseUrl = defineApiBaseUrl.isNotEmpty
@@ -52,6 +71,14 @@ class AppConfig {
     if (!apiBaseUrl.endsWith('/')) {
       apiBaseUrl += '/';
     }
+
+    String realtimeUrl = defineRealtimeUrl.isNotEmpty
+        ? defineRealtimeUrl
+        : (envRealtimeUrl?.isNotEmpty ?? false)
+        ? envRealtimeUrl!
+        : kDefaultRealtimeUrl;
+
+    realtimeUrl = realtimeUrl.replaceAll('"', '').replaceAll("'", "");
 
     final usesMockData = defineUsesMock.isNotEmpty
         ? _parseBool(defineUsesMock, defaultValue: false)
@@ -74,6 +101,7 @@ class AppConfig {
     return AppConfig(
       apiBaseUrl: apiBaseUrl,
       usesMockData: usesMockData,
+      realtimeUrl: realtimeUrl,
       googleClientId: googleClientId,
       googleClientSecret: googleClientSecret,
     );
@@ -81,9 +109,14 @@ class AppConfig {
 
   final String apiBaseUrl;
   final bool usesMockData;
+  final String realtimeUrl;
   final String googleClientId;
   final String googleClientSecret;
   final String contactSalesUrl;
+
+  /// Helper to parse boolean environment variable values.
+  static bool parseBool(String raw, {required bool defaultValue}) =>
+      _parseBool(raw, defaultValue: defaultValue);
 }
 
 bool _parseBool(String raw, {required bool defaultValue}) {
