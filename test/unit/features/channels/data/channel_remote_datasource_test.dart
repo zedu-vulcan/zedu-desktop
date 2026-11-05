@@ -5,6 +5,58 @@ import 'package:zedu/features/features.dart';
 class MockApiBaseService extends Mock implements ApiBaseService {}
 
 void main() {
+  group('ChannelRemoteDataSourceImpl.joinChannel', () {
+    late MockApiBaseService mockApi;
+    late ChannelRemoteDataSourceImpl datasource;
+
+    setUp(() {
+      mockApi = MockApiBaseService();
+      datasource = ChannelRemoteDataSourceImpl(apiBaseService: mockApi);
+    });
+
+    test('posts the username to the channel join endpoint', () async {
+      when(
+        () => mockApi.post<Map<String, dynamic>>(
+          path: '/channels/ch-1/join',
+          data: {'username': 'ada'},
+        ),
+      ).thenAnswer(
+        (_) async => ApiResponseModel<Map<String, dynamic>>(
+          data: {'status': 'success'},
+          statusCode: 200,
+        ),
+      );
+
+      await datasource.joinChannel(channelId: 'ch-1', username: 'ada');
+
+      verify(
+        () => mockApi.post<Map<String, dynamic>>(
+          path: '/channels/ch-1/join',
+          data: {'username': 'ada'},
+        ),
+      ).called(1);
+      verifyNoMoreInteractions(mockApi);
+    });
+
+    test('propagates an API failure to the caller', () async {
+      const failure = ApiFailure(
+        message: 'channel not found',
+        kind: ApiFailureKind.notFound,
+      );
+      when(
+        () => mockApi.post<Map<String, dynamic>>(
+          path: '/channels/ch-1/join',
+          data: {'username': 'ada'},
+        ),
+      ).thenThrow(failure);
+
+      await expectLater(
+        datasource.joinChannel(channelId: 'ch-1', username: 'ada'),
+        throwsA(same(failure)),
+      );
+    });
+  });
+
   group('ChannelRemoteDataSourceImpl.toggleStarChannel', () {
     late MockApiBaseService mockApi;
     late ChannelRemoteDataSourceImpl datasource;
