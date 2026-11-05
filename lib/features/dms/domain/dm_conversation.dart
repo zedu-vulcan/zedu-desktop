@@ -78,7 +78,7 @@ class DmConversation {
       defaultAvatarUrl: _nonEmpty(json['default_avatar_url']),
       channelType: json['channel_type'] as String? ?? 'dm',
       isFavourite: json['is_favourite'] as bool? ?? false,
-      threadCount: json['thread_count'] as int? ?? 0,
+      threadCount: (json['thread_count'] as num?)?.toInt() ?? 0,
       lastThreadId: json['last_thread_id'] as String?,
       lastReadAt: json['last_read_at'] != null
           ? DateTime.tryParse(json['last_read_at'] as String)?.toLocal()
@@ -86,8 +86,7 @@ class DmConversation {
       previewMessage: json['preview_message'] as String? ?? '',
       previewThreads: threads,
       participants: participantsList,
-      unreadCount:
-          json['unread_count'] as int? ?? json['thread_count'] as int? ?? 0,
+      unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -121,10 +120,8 @@ class DmPreviewThread {
       message: json['message'] as String? ?? '',
       userId: json['user_id'] as String? ?? '',
       username: json['username'] as String? ?? '',
-      createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String).toLocal()
-          : DateTime.now(),
-      messageCount: json['message_count'] as int? ?? 0,
+      createdAt: DateTime.tryParse('${json['created_at']}')?.toLocal() ?? DateTime.now(),
+      messageCount: (json['message_count'] as num?)?.toInt() ?? 0,
     );
   }
 }
