@@ -84,10 +84,10 @@ class PeopleListNotifier extends AsyncNotifier<PeopleListState> {
     );
     try {
       final page = await _fetch(orgId, current.loadedPage + 1);
-      if (!ref.mounted) return;
+      if (!ref.mounted || ref.read(currentOrgIdProvider) != orgId) return;
       state = AsyncData(current._withPage(page));
     } catch (_) {
-      if (!ref.mounted) return;
+      if (!ref.mounted || ref.read(currentOrgIdProvider) != orgId) return;
       state = AsyncData(
         PeopleListState(
           members: current.members,
@@ -119,9 +119,7 @@ class PeopleActionsNotifier extends Notifier<String?> {
           .read(dmRepositoryProvider)
           .openConversation(orgId: orgId, participantId: member.id);
       if (!ref.mounted) return false;
-      ref
-          .read(selectedDmProvider.notifier)
-          .select(
+      ref.read(selectedDmProvider.notifier).select(
             DmConversation(
               channelId: opened.channelId,
               username: member.displayName,
