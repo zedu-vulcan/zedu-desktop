@@ -128,6 +128,13 @@ class ChatHistoryNotifier extends ChangeNotifier {
   // ignore: cancel_subscriptions
   dynamic _pollingTimer;
 
+  bool _pollInFlight = false;
+  bool _disposed = false;
+
+  /// Visible for testing to verify poll concurrency protection.
+  @visibleForTesting
+  bool get isPollingInFlight => _pollInFlight;
+
   // Record loaded IDs as "already seen" so we only notify about messages that
   // arrive AFTER they were loaded.
   void _markSeen(List<Map<String, dynamic>> loaded) {
@@ -147,10 +154,14 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
   Future<void> _pollForNewMessages() async {
     // Until the history loads, every polled message would look new.
-    if (loadFailed) return;
+    // Also guard against overlapping polls when a previous request is still in flight,
+    // or when the notifier has been disposed.
+    if (loadFailed || _pollInFlight || _disposed) return;
+    _pollInFlight = true;
     try {
       final repository = ref.read(dmRepositoryProvider);
       final fresh = await repository.getMessages(channelId, page: 1);
+      if (_disposed) return;
 
       // A message edited elsewhere keeps its id, so it is not "new": replace
       // its text in place, without a notification or a second copy.
@@ -194,13 +205,15 @@ class ChatHistoryNotifier extends ChangeNotifier {
             .toList();
         if (newOnly.isNotEmpty) {
           messages = [...newOnly, ...messages];
-          notifyListeners();
+          if (!_disposed) notifyListeners();
           return;
         }
       }
-      if (changed) notifyListeners();
+      if (changed && !_disposed) notifyListeners();
     } catch (_) {
       // Silent — polling failures should not surface to the UI.
+    } finally {
+      _pollInFlight = false;
     }
   }
 
@@ -227,7 +240,9 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     (_pollingTimer as dynamic)?.cancel();
+    _pollingTimer = null;
     // Recordings kept for messages that never sent are no longer needed.
     for (final options in _sendOptions.values) {
       _deleteRecordings(options.media);

@@ -64,6 +64,56 @@ void main() {
       }
     });
 
+    testWidgets(
+      'guards against overlapping poll requests when response is slow (#2656)',
+      (tester) async {
+        final completer = Completer<List<Map<String, dynamic>>>();
+        var callCount = 0;
+
+        when(
+          () => repository.getMessages(any(), page: any(named: 'page')),
+        ).thenAnswer((_) {
+          callCount++;
+          if (callCount == 1) {
+            // Initial load
+            return Future.value(history('initial'));
+          }
+          // Poll requests
+          return completer.future;
+        });
+
+        final container = ProviderContainer(
+          overrides: [
+            authNotifierProvider.overrideWith(_SignedOutAuth.new),
+            dmRepositoryProvider.overrideWithValue(repository),
+          ],
+        );
+        final notifier = open(container);
+        await tester.pump();
+        expect(callCount, 1);
+        expect(notifier.messages.single['content'], 'initial');
+
+        // First poll fires at 10s
+        await tester.pump(const Duration(seconds: 10));
+        expect(callCount, 2);
+        expect(notifier.isPollingInFlight, isTrue);
+
+        // Advance another 10s while previous request is still in flight
+        await tester.pump(const Duration(seconds: 10));
+        // Overlapping poll should be skipped because one is already in flight
+        expect(callCount, 2);
+        expect(notifier.isPollingInFlight, isTrue);
+
+        // Complete the in-flight poll request
+        completer.complete(history('updated'));
+        await tester.pump();
+        expect(notifier.isPollingInFlight, isFalse);
+        expect(notifier.messages.single['content'], 'updated');
+
+        container.dispose();
+      },
+    );
+
     testWidgets('leaves the list alone when the response is unchanged', (
       tester,
     ) async {
