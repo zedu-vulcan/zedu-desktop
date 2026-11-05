@@ -130,10 +130,10 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
     final repository = ref.read(dmRepositoryProvider);
     final version = _listVersion;
     final results = await repository.getConversations(orgId: orgId, page: page);
-    if (version == _listVersion && results.length < DmRepository.pageSize) {
-      _hasMore = false;
+    if (version == _listVersion) {
+      _hasMore = results.hasMore;
     }
-    return results;
+    return results.conversations;
   }
 
   Future<void> loadMore() async {

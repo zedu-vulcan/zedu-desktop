@@ -7,7 +7,7 @@ class _Repo implements DmRepository {
   bool failPage2 = true;
 
   @override
-  Future<List<DmConversation>> getConversations({
+  Future<DmConversationsPage> getConversations({
     required String orgId,
     int page = 1,
     bool recentDm = false,
@@ -18,16 +18,21 @@ class _Repo implements DmRepository {
       failPage2 = false;
       throw Exception('offline');
     }
-    return [
-      for (var i = 0; i < DmRepository.pageSize; i++)
-        DmConversation(
-          channelId: 'p$page-$i',
-          username: 'u',
-          participantId: 'x',
-          previewMessage: '',
-          unreadCount: 0,
-        ),
-    ];
+    return DmConversationsPage(
+      conversations: [
+        for (var i = 0; i < DmRepository.pageSize; i++)
+          DmConversation(
+            channelId: 'p$page-$i',
+            username: 'u',
+            participantId: 'x',
+            previewMessage: '',
+            unreadCount: 0,
+          ),
+      ],
+      currentPage: page,
+      totalPages: 3,
+      totalItems: 3 * DmRepository.pageSize,
+    );
   }
 
   @override

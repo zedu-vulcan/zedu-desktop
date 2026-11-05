@@ -10,6 +10,9 @@ class _FakeProfileNotifier extends UserProfileNotifier {
 
   @override
   UserProfileState build() => initial;
+
+  @override
+  Future<void> load() async {}
 }
 
 const _rocket = TeamMember(
@@ -72,9 +75,11 @@ Future<void> _pumpWithMentionList(
       ),
     ),
   );
+  await tester.pumpAndSettle();
   await tester.tap(find.byType(TextField));
+  await tester.pumpAndSettle();
   await tester.enterText(find.byType(TextField), '@');
-  await tester.pump();
+  await tester.pumpAndSettle();
 }
 
 void main() {
