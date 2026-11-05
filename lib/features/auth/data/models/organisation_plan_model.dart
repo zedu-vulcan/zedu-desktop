@@ -17,18 +17,14 @@ class OrganisationPlanModel {
 
   factory OrganisationPlanModel.fromJson(Map<String, dynamic> json) {
     return OrganisationPlanModel(
-      startedAt: DateTime.parse(
-        json['started_at'] as String? ?? '0001-01-01T00:00:00Z',
-      ),
-      endedAt: DateTime.parse(
-        json['ended_at'] as String? ?? '0001-01-01T00:00:00Z',
-      ),
-      createdAt: DateTime.parse(
-        json['created_at'] as String? ?? '0001-01-01T00:00:00Z',
-      ),
-      updatedAt: DateTime.parse(
-        json['updated_at'] as String? ?? '0001-01-01T00:00:00Z',
-      ),
+      startedAt: DateTime.tryParse(json['started_at'] as String? ?? '') ??
+          DateTime.utc(1),
+      endedAt: DateTime.tryParse(json['ended_at'] as String? ?? '') ??
+          DateTime.utc(1),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.utc(1),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+          DateTime.utc(1),
       planDetails: PlanDetailsModel.fromJson(
         json['plan_details'] as Map<String, dynamic>,
       ),

@@ -87,13 +87,11 @@ class PlanDetailsModel {
       transcriptAvailable: json['transcript_available'] as bool? ?? false,
       advancedControls: json['advanced_controls'] as bool? ?? false,
       advancedControlsUser: json['advanced_controls_user'] as bool? ?? false,
-      createdAt: DateTime.parse(
-        json['created_at'] as String? ?? '0001-01-01T00:00:00Z',
-      ),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.utc(1),
       credits: (json['credits'] as num?)?.toInt() ?? 0,
-      updatedAt: DateTime.parse(
-        json['updated_at'] as String? ?? '0001-01-01T00:00:00Z',
-      ),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+          DateTime.utc(1),
     );
   }
 }
