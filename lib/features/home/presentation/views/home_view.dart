@@ -41,7 +41,14 @@ class _HomeViewState extends ConsumerState<HomeView> {
             child: Row(
               children: [
                 AppSidebarRail(activeType: ref.watch(homeSidebarProvider)),
-                ResizableSidebar(child: const _MainSidebarSwitcher()),
+                // Buzz is a full-width page, as on the web. The sidebar
+                // stays mounted so it keeps the width the user dragged it to.
+                Visibility(
+                  visible:
+                      ref.watch(homeSidebarProvider) != HomeSidebarType.buzz,
+                  maintainState: true,
+                  child: ResizableSidebar(child: const _MainSidebarSwitcher()),
+                ),
                 Expanded(
                   child: Stack(
                     children: [
@@ -191,6 +198,9 @@ class _ChatAreaSwitcher extends ConsumerWidget {
     }
     if (state == HomeSidebarType.files) {
       return const FilesView();
+    }
+    if (state == HomeSidebarType.buzz) {
+      return const BuzzView();
     }
     return const HomeChatArea();
   }
@@ -347,10 +357,25 @@ class HomeChatArea extends ConsumerWidget {
         ? (chat.id ?? 'general')
         : 'general';
     Channel? selected;
-    for (final item in channels) {
-      if (item.name.toLowerCase() == channelName.toLowerCase()) {
-        selected = item;
-        break;
+    // Two channels can differ only in letter case, so the picked id wins over
+    // the name. The name still finds #general at the start, before any pick.
+    final pickedId = chat.type == ActiveChatType.channel
+        ? chat.channelId
+        : null;
+    if (pickedId != null) {
+      for (final item in channels) {
+        if (item.id == pickedId) {
+          selected = item;
+          break;
+        }
+      }
+    }
+    if (selected == null) {
+      for (final item in channels) {
+        if (item.name.toLowerCase() == channelName.toLowerCase()) {
+          selected = item;
+          break;
+        }
       }
     }
 
