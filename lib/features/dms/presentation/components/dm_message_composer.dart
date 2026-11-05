@@ -85,6 +85,38 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   /// save its text back as a draft.
   bool _channelDeleted = false;
 
+  Future<void> _openSavedReplies() async {
+    final userId = ref.read(authNotifierProvider).user?.id;
+    final channelId = widget.channelId;
+    final draftKey = _draftKey;
+    final original = _controller.value;
+    final reply = await showDialog<SavedReply>(
+      context: context,
+      builder: (_) => const SavedRepliesDialog(),
+    );
+    if (!mounted || reply == null) return;
+    if (ref.read(authNotifierProvider).user?.id != userId ||
+        widget.channelId != channelId ||
+        _draftKey != draftKey ||
+        _controller.text != original.text) {
+      return;
+    }
+    final selection = original.selection;
+    final valid = selection.isValid && selection.end <= original.text.length;
+    final start = valid ? selection.start : original.text.length;
+    final end = valid ? selection.end : original.text.length;
+    final recipient = widget.recipientName.trim();
+    final inserted = renderSavedReply(
+      reply.body,
+      recipient: recipient.isEmpty ? 'there' : recipient,
+    );
+    _controller.value = TextEditingValue(
+      text: original.text.replaceRange(start, end, inserted),
+      selection: TextSelection.collapsed(offset: start + inserted.length),
+    );
+    _focusNode.requestFocus();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1055,6 +1087,12 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                         icon: Icons.format_quote_rounded,
                         tooltip: 'Block quote',
                         onTap: _insertQuote,
+                        colors: colors,
+                      ),
+                      ToolbarButton(
+                        icon: Icons.auto_awesome_outlined,
+                        tooltip: 'Saved replies',
+                        onTap: _openSavedReplies,
                         colors: colors,
                       ),
                     ],
