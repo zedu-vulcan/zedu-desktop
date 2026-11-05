@@ -145,9 +145,14 @@ class ChatHistoryNotifier extends ChangeNotifier {
         });
   }
 
+  /// True while a poll request is running. A slow response must not be
+  /// overlapped by the next tick, or requests pile up (#2656).
+  bool _pollInFlight = false;
+
   Future<void> _pollForNewMessages() async {
     // Until the history loads, every polled message would look new.
-    if (loadFailed) return;
+    if (loadFailed || _pollInFlight) return;
+    _pollInFlight = true;
     try {
       final repository = ref.read(dmRepositoryProvider);
       final fresh = await repository.getMessages(channelId, page: 1);
@@ -201,6 +206,8 @@ class ChatHistoryNotifier extends ChangeNotifier {
       if (changed) notifyListeners();
     } catch (_) {
       // Silent — polling failures should not surface to the UI.
+    } finally {
+      _pollInFlight = false;
     }
   }
 
