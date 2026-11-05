@@ -37,19 +37,24 @@ class _FakeDmRepository extends Fake implements DmRepository {
   final List<DmConversation> conversations;
 
   @override
-  Future<List<DmConversation>> getConversations({
+  Future<DmConversationsPage> getConversations({
     required String orgId,
     int page = 1,
     bool recentDm = false,
     String? search,
   }) async {
+    List<DmConversation> list = conversations;
     if (search != null && search.isNotEmpty) {
       final q = search.toLowerCase();
-      return conversations
+      list = conversations
           .where((c) => c.displayName.toLowerCase().contains(q))
           .toList();
     }
-    return conversations;
+    return DmConversationsPage(
+      conversations: list,
+      currentPage: page,
+      totalPages: 1,
+    );
   }
 }
 

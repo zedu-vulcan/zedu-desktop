@@ -136,13 +136,12 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
     final repository = ref.read(dmRepositoryProvider);
     final version = _listVersion;
     final results = await repository.getConversations(orgId: orgId, page: page);
-    if (version == _listVersion && results.length < DmRepository.pageSize) {
-      _hasMore = false;
+    if (version == _listVersion) {
+      _hasMore = results.hasMore;
     }
-
     final usesMockData =
         locator.isRegistered<AppConfig>() && locator<AppConfig>().usesMockData;
-    if (usesMockData && results.isEmpty && page == 1) {
+    if (usesMockData && results.conversations.isEmpty && page == 1) {
       return [
         DmConversation(
           channelId: 'mock-channel-id-123',
@@ -155,7 +154,7 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
       ];
     }
 
-    return results;
+    return results.conversations;
   }
 
   Future<void> loadMore() async {
@@ -221,10 +220,10 @@ class DmSearchResultsNotifier extends AsyncNotifier<List<DmConversation>> {
       page: page,
       search: query,
     );
-    if (version == _searchVersion && results.length < DmRepository.pageSize) {
-      _hasMore = false;
+    if (version == _searchVersion) {
+      _hasMore = results.hasMore;
     }
-    return results;
+    return results.conversations;
   }
 
   Future<void> loadMore() async {
