@@ -297,6 +297,11 @@ class _FilesSection extends ConsumerWidget {
               ownerNameOf: (file) =>
                   file.owner.isNotEmpty ? file.owner : ownerName(file.userId),
               onOpen: (file) => _open(context, file),
+              onPreview: (file) => FilePreviewDialog.show(
+                context,
+                file: file,
+                onOpenExternally: () => _open(context, file),
+              ),
             ),
             if (page.totalPages > 1)
               _Pagination(

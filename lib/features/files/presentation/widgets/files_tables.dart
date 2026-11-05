@@ -205,11 +205,13 @@ class FilesTable extends StatelessWidget {
     required this.files,
     required this.ownerNameOf,
     required this.onOpen,
+    this.onPreview,
   });
 
   final List<WorkspaceFile> files;
   final String Function(WorkspaceFile file) ownerNameOf;
   final ValueChanged<WorkspaceFile> onOpen;
+  final ValueChanged<WorkspaceFile>? onPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -222,6 +224,7 @@ class FilesTable extends StatelessWidget {
         _Column('Owner', 2, compact: false),
         _Column('Date Modified', 2),
         _Column('Size', 1),
+        _Column('', 1),
       ],
       rowCount: files.length,
       onTapRow: (r) => onOpen(files[r]),
@@ -251,6 +254,22 @@ class FilesTable extends StatelessWidget {
           _cellText(context, ownerNameOf(file)),
           _cellText(context, formatFileDate(file.modifiedAt)),
           _cellText(context, formatFileSize(file.size)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                key: ValueKey('preview-${file.id}'),
+                icon: Icon(
+                  Icons.visibility_outlined,
+                  size: 18,
+                  color: colors.textSecondary,
+                ),
+                tooltip: 'Preview file',
+                onPressed: () =>
+                    onPreview != null ? onPreview!(file) : onOpen(file),
+              ),
+            ],
+          ),
         ];
       },
     );
