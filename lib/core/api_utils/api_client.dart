@@ -134,7 +134,7 @@ class ApiBaseService {
           responseData['status'] == 'error') {
         throw ApiFailure(
           message: responseData['message'] as String? ?? 'Request failed.',
-          statusCode: responseData['status_code'] as int?,
+          statusCode: int.tryParse('${responseData['status_code']}'),
           path: path,
           kind: ApiFailureKind.client,
         );
