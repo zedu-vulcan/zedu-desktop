@@ -114,7 +114,8 @@ class _ProfileContent extends StatelessWidget {
                     )
                   : OrganizationSection(
                       organization: organization,
-                      isSaving: state.isSaving,
+                      isDeletingOrganization: state.isDeletingOrganization,
+                      isLeavingOrganization: state.isLeavingOrganization,
                       onSave: notifier.updateOrganization,
                       onDelete: notifier.deleteOrganization,
                       onLeave: notifier.leaveOrganization,

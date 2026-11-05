@@ -5,14 +5,16 @@ class OrganizationSection extends StatelessWidget {
   const OrganizationSection({
     super.key,
     required this.organization,
-    required this.isSaving,
+    required this.isDeletingOrganization,
+    required this.isLeavingOrganization,
     required this.onSave,
     required this.onDelete,
     required this.onLeave,
   });
 
   final OrganizationProfile organization;
-  final bool isSaving;
+  final bool isDeletingOrganization;
+  final bool isLeavingOrganization;
   final ValueChanged<OrganizationProfile> onSave;
   final Future<void> Function() onDelete;
   final Future<void> Function() onLeave;
@@ -95,8 +97,10 @@ class OrganizationSection extends StatelessWidget {
                 side: BorderSide(color: context.colors.divider),
                 padding: const EdgeInsets.symmetric(horizontal: 18),
               ),
-              loading: isSaving,
-              onPressed: () => _confirmLeave(context, onLeave),
+              loading: isLeavingOrganization,
+              onPressed: isDeletingOrganization || isLeavingOrganization
+                  ? null
+                  : () => _confirmLeave(context, onLeave),
             ),
             const SizedBox(width: 16),
             AppButton.outlined(
@@ -108,8 +112,10 @@ class OrganizationSection extends StatelessWidget {
                 side: const BorderSide(color: Color(0xFFEF4444)),
                 padding: const EdgeInsets.symmetric(horizontal: 18),
               ),
-              loading: isSaving,
-              onPressed: () => _confirmDelete(context, onDelete),
+              loading: isDeletingOrganization,
+              onPressed: isDeletingOrganization || isLeavingOrganization
+                  ? null
+                  : () => _confirmDelete(context, onDelete),
             ),
           ],
         ),
@@ -123,8 +129,7 @@ class OrganizationSection extends StatelessWidget {
   ) => showProfileConfirmDialog(
     context,
     title: 'Sign out of workspace?',
-    message:
-        'This will securely sign you out and remove your access from this workspace. You will need to be re-invited to join again.',
+    message: 'This will securely sign you out and remove your access from this workspace. You will need to be re-invited to join again.',
     confirmLabel: 'Sign out',
     onConfirm: onConfirm,
     destructive: true,

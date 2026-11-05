@@ -22,6 +22,8 @@ class UserProfileState {
     this.billing,
     this.isLoading = false,
     this.isSaving = false,
+    this.isDeletingOrganization = false,
+    this.isLeavingOrganization = false,
     this.error,
     this.successMessage,
   });
@@ -36,6 +38,8 @@ class UserProfileState {
   final BillingInfo? billing;
   final bool isLoading;
   final bool isSaving;
+  final bool isDeletingOrganization;
+  final bool isLeavingOrganization;
   final String? error;
   final String? successMessage;
 
@@ -50,6 +54,8 @@ class UserProfileState {
     BillingInfo? billing,
     bool? isLoading,
     bool? isSaving,
+    bool? isDeletingOrganization,
+    bool? isLeavingOrganization,
     String? error,
     String? successMessage,
     bool clearError = false,
@@ -72,6 +78,10 @@ class UserProfileState {
       billing: billing ?? this.billing,
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
+      isDeletingOrganization:
+          isDeletingOrganization ?? this.isDeletingOrganization,
+      isLeavingOrganization:
+          isLeavingOrganization ?? this.isLeavingOrganization,
       error: clearError ? null : (error ?? this.error),
       successMessage: clearSuccess
           ? null

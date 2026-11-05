@@ -281,13 +281,14 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
   }
 
   Future<void> deleteOrganization() async {
+    if (state.isDeletingOrganization || state.isLeavingOrganization) return;
     final orgId = ref.read(workspaceProvider).selectedWorkspace?.id;
     if (orgId == null) {
       state = state.copyWith(error: 'No organisation is selected.');
       return;
     }
     state = state.copyWith(
-      isSaving: true,
+      isDeletingOrganization: true,
       clearError: true,
       clearSuccess: true,
     );
@@ -296,20 +297,21 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
       case Success<void>():
         ref.read(workspaceProvider.notifier).removeWorkspace(orgId);
         state = state.copyWith(
-          isSaving: false,
+          isDeletingOrganization: false,
           successMessage: 'Organization deleted successfully.',
         );
       case Failure<void>():
         state = state.copyWith(
-          isSaving: false,
+          isDeletingOrganization: false,
           error: result.error.friendlyMessage,
         );
     }
   }
 
   Future<void> leaveOrganization() async {
+    if (state.isDeletingOrganization || state.isLeavingOrganization) return;
     state = state.copyWith(
-      isSaving: true,
+      isLeavingOrganization: true,
       clearError: true,
       clearSuccess: true,
     );
@@ -329,12 +331,12 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
       ref.read(workspaceProvider.notifier).removeWorkspace(orgId);
 
       state = state.copyWith(
-        isSaving: false,
+        isLeavingOrganization: false,
         successMessage: 'Successfully signed out of workspace.',
       );
     } catch (e) {
       state = state.copyWith(
-        isSaving: false,
+        isLeavingOrganization: false,
         error: 'Failed to leave workspace. Please try again.',
       );
     }
@@ -481,9 +483,7 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
     if (roleId == null) {
       state = state.copyWith(
         isSaving: false,
-        error: roleName.isEmpty
-            ? 'Select a role before inviting a member.'
-            : 'Could not assign the selected role. Refresh roles and try again.',
+        error: roleName.isEmpty ? 'Select a role before inviting a member.' : 'Could not assign the selected role. Refresh roles and try again.',
       );
       return;
     }

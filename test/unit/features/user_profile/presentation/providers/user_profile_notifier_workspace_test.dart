@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../../../helpers/helpers.dart';
+
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -74,15 +75,12 @@ void main() {
       when(() => repo.getSecuritySessions()).thenAnswer((_) => _failed());
       when(() => repo.getRolesAndPermissions()).thenAnswer((_) => _failed());
       when(() => repo.getBillingInfo()).thenAnswer((_) => _failed());
-      when(
-        () => repo.getNotificationPreferences(orgId: any(named: 'orgId')),
-      ).thenAnswer((_) => _failed());
-      when(
-        () => repo.getTeamMembers(orgId: any(named: 'orgId')),
-      ).thenAnswer((_) => _failed());
-      when(
-        () => repo.getOrganization(orgId: any(named: 'orgId')),
-      ).thenAnswer(answerOrganization);
+      when(() => repo.getNotificationPreferences(orgId: any(named: 'orgId')))
+          .thenAnswer((_) => _failed());
+      when(() => repo.getTeamMembers(orgId: any(named: 'orgId')))
+          .thenAnswer((_) => _failed());
+      when(() => repo.getOrganization(orgId: any(named: 'orgId')))
+          .thenAnswer(answerOrganization);
     });
 
     tearDown(() async {
@@ -113,9 +111,8 @@ void main() {
           natureOfBusiness: 'Technology',
           country: 'Nigeria',
         );
-        when(
-          () => repo.updateOrganization(renamed, orgId: 'A'),
-        ).thenAnswer((_) async => const Success(renamed));
+        when(() => repo.updateOrganization(renamed, orgId: 'A'))
+            .thenAnswer((_) async => const Success(renamed));
 
         final container = ProviderContainer(
           overrides: [
@@ -148,9 +145,8 @@ void main() {
         natureOfBusiness: 'Technology',
         country: 'Nigeria',
       );
-      when(
-        () => repo.updateOrganization(renamed, orgId: 'A'),
-      ).thenAnswer((_) => _failed());
+      when(() => repo.updateOrganization(renamed, orgId: 'A'))
+          .thenAnswer((_) => _failed());
 
       final container = ProviderContainer(
         overrides: [
@@ -229,9 +225,8 @@ void main() {
         registerFallbackValue(saved);
         save = Completer<Result<OrganizationProfile>>();
         when(() => storage.readData(any())).thenAnswer((_) async => null);
-        when(
-          () => repo.updateOrganization(any(), orgId: any(named: 'orgId')),
-        ).thenAnswer((_) => save.future);
+        when(() => repo.updateOrganization(any(), orgId: any(named: 'orgId')))
+            .thenAnswer((_) => save.future);
       });
 
       Future<ProviderContainer> startSaveInWorkspaceA() async {
@@ -306,18 +301,14 @@ void main() {
       when(() => repo.getSecuritySessions()).thenAnswer((_) => _failed());
       when(() => repo.getRolesAndPermissions()).thenAnswer((_) => _failed());
       when(() => repo.getBillingInfo()).thenAnswer((_) => _failed());
-      when(
-        () => repo.getNotificationPreferences(orgId: any(named: 'orgId')),
-      ).thenAnswer((_) => _failed());
-      when(
-        () => repo.getTeamMembers(orgId: any(named: 'orgId')),
-      ).thenAnswer((_) => _failed());
-      when(
-        () => repo.getOrganization(orgId: any(named: 'orgId')),
-      ).thenAnswer((_) => _failed());
-      when(
-        () => repo.deleteOrganization(orgId: any(named: 'orgId')),
-      ).thenAnswer((_) async => const Success<void>(null));
+      when(() => repo.getNotificationPreferences(orgId: any(named: 'orgId')))
+          .thenAnswer((_) => _failed());
+      when(() => repo.getTeamMembers(orgId: any(named: 'orgId')))
+          .thenAnswer((_) => _failed());
+      when(() => repo.getOrganization(orgId: any(named: 'orgId')))
+          .thenAnswer((_) => _failed());
+      when(() => repo.deleteOrganization(orgId: any(named: 'orgId')))
+          .thenAnswer((_) async => const Success<void>(null));
     });
 
     tearDown(() async {
@@ -372,5 +363,38 @@ void main() {
         'No organisation is selected.',
       );
     });
+
+    test(
+      'tracks deletion separately and blocks a second destructive action',
+      () async {
+        final pending = Completer<Result<void>>();
+        when(() => repo.deleteOrganization(orgId: any(named: 'orgId')))
+            .thenAnswer((_) => pending.future);
+        final container = buildContainer(selected: 'A');
+        await Future<void>.delayed(Duration.zero);
+
+        final delete = container
+            .read(userProfileNotifierProvider.notifier)
+            .deleteOrganization();
+        await Future<void>.delayed(Duration.zero);
+
+        final duringDelete = container.read(userProfileNotifierProvider);
+        expect(duringDelete.isDeletingOrganization, isTrue);
+        expect(duringDelete.isLeavingOrganization, isFalse);
+        expect(duringDelete.isSaving, isFalse);
+
+        await container
+            .read(userProfileNotifierProvider.notifier)
+            .deleteOrganization();
+        verify(() => repo.deleteOrganization(orgId: 'A')).called(1);
+
+        pending.complete(const Success<void>(null));
+        await delete;
+        expect(
+          container.read(userProfileNotifierProvider).isDeletingOrganization,
+          isFalse,
+        );
+      },
+    );
   });
 }
