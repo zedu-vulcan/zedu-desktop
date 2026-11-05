@@ -98,6 +98,12 @@ class _FakeFilesRepository implements FilesRepository {
   final moves = <(String, String)>[];
   Result<void> moveResult = const Success(null);
 
+  /// The folders inside each folder, by that folder's id.
+  final subfolders = <String, List<FileFolder>>{};
+
+  /// Folders whose subfolders fail to load.
+  final failingFolderLevels = <String>{};
+
   @override
   Future<Result<void>> moveFile(String fileId, String folderId) async {
     moves.add((fileId, folderId));
@@ -255,7 +261,12 @@ class _FakeFilesRepository implements FilesRepository {
     if (failFolders) {
       return const Failure(ApiFailure(message: 'offline'));
     }
-    if (parentId != null) return const Success(FoldersPage(folders: []));
+    if (parentId != null) {
+      if (failingFolderLevels.contains(parentId)) {
+        return const Failure(ApiFailure(message: 'offline'));
+      }
+      return Success(FoldersPage(folders: subfolders[parentId] ?? const []));
+    }
     return Success(
       FoldersPage(
         folders: [
@@ -816,11 +827,17 @@ void main() {
     );
   });
 
-  testWidgets('the folder a file is in is not offered', (tester) async {
-    final repository = _FakeFilesRepository();
+  Finder inMoveDialog(Finder finder) =>
+      find.descendant(of: find.byType(MoveFileDialog), matching: finder);
+
+  testWidgets('the folder a file is in is not offered, but can be opened', (
+    tester,
+  ) async {
+    final repository = _FakeFilesRepository()
+      ..subfolders['docs'] = const [FileFolder(id: 'drafts', name: 'drafts')];
     await _pump(tester, repository);
 
-    // spec.pdf is inside docs, the only folder.
+    // spec.pdf is inside docs, the only top-level folder.
     await tester.tap(find.text('docs'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('More actions for spec.pdf'));
@@ -828,10 +845,108 @@ void main() {
     await tester.tap(find.text('Move'));
     await tester.pumpAndSettle();
 
+    expect(inMoveDialog(find.text('The file is already here')), findsOneWidget);
+    await tester.tap(inMoveDialog(find.text('docs')));
+    await tester.pump();
+    expect(tester.widget<FilledButton>(moveButton()).onPressed, isNull);
+
+    // Its subfolders can still be chosen.
+    await tester.tap(find.byTooltip('Open docs'));
+    await tester.pumpAndSettle();
+    await tester.tap(inMoveDialog(find.text('drafts')));
+    await tester.pump();
+    await tester.tap(moveButton());
+    await tester.pumpAndSettle();
+
+    expect(repository.moves, [('f-2', 'drafts')]);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('moves a file into a subfolder', (tester) async {
+    final repository = _FakeFilesRepository()
+      ..subfolders['docs'] = const [FileFolder(id: 'logos', name: 'Logos')];
+    await _pump(tester, repository);
+    await openFilesTab(tester);
+
+    await chooseInMenu(tester, 'Move');
+    // Only the top level is listed until a folder is opened.
+    expect(inMoveDialog(find.text('Logos')), findsNothing);
+
+    await tester.tap(find.byTooltip('Open docs'));
+    await tester.pumpAndSettle();
+
+    expect(repository.folderRequests, contains((FilesScope.all, 'docs')));
+    expect(inMoveDialog(find.text('All folders')), findsOneWidget);
+    await tester.tap(inMoveDialog(find.text('Logos')));
+    await tester.pump();
+    await tester.tap(moveButton());
+    await tester.pumpAndSettle();
+
+    expect(repository.moves, [('f-1', 'logos')]);
+    expect(find.text('Moved logo.png to Logos.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('the breadcrumb goes back up and clears the choice', (
+    tester,
+  ) async {
+    final repository = _FakeFilesRepository()
+      ..subfolders['docs'] = const [FileFolder(id: 'logos', name: 'Logos')];
+    await _pump(tester, repository);
+    await openFilesTab(tester);
+    await chooseInMenu(tester, 'Move');
+
+    await tester.tap(find.byTooltip('Open docs'));
+    await tester.pumpAndSettle();
+    await tester.tap(inMoveDialog(find.text('Logos')));
+    await tester.pump();
+    await tester.tap(inMoveDialog(find.text('All folders')));
+    await tester.pumpAndSettle();
+
+    expect(inMoveDialog(find.text('docs')), findsOneWidget);
+    expect(inMoveDialog(find.text('Logos')), findsNothing);
+    expect(inMoveDialog(find.text('All folders')), findsNothing);
+    expect(tester.widget<FilledButton>(moveButton()).onPressed, isNull);
+  });
+
+  testWidgets('a folder that fails to load can be retried', (tester) async {
+    final repository = _FakeFilesRepository()
+      ..subfolders['docs'] = const [FileFolder(id: 'logos', name: 'Logos')]
+      ..failingFolderLevels.add('docs');
+    await _pump(tester, repository);
+    await openFilesTab(tester);
+    await chooseInMenu(tester, 'Move');
+
+    await tester.tap(find.byTooltip('Open docs'));
+    await tester.pumpAndSettle();
+    expect(inMoveDialog(find.text('Could not load folders.')), findsOneWidget);
+
+    final topLevelLoads = repository.folderRequests
+        .where((r) => r.$2 == null)
+        .length;
+    repository.failingFolderLevels.clear();
+    await tester.tap(inMoveDialog(find.text('Retry')));
+    await tester.pumpAndSettle();
+
+    expect(inMoveDialog(find.text('Logos')), findsOneWidget);
+    // Retry reloads only the level that failed.
     expect(
-      find.text('No other folders yet. Create one first.'),
-      findsOneWidget,
+      repository.folderRequests.where((r) => r.$2 == null).length,
+      topLevelLoads,
     );
+  });
+
+  testWidgets('an empty folder says so', (tester) async {
+    await _pump(tester, _FakeFilesRepository());
+    await openFilesTab(tester);
+    await chooseInMenu(tester, 'Move');
+
+    await tester.tap(find.byTooltip('Open docs'));
+    await tester.pumpAndSettle();
+
+    expect(inMoveDialog(find.text('No folders inside docs.')), findsOneWidget);
   });
 
   testWidgets('deleted files cannot be moved', (tester) async {

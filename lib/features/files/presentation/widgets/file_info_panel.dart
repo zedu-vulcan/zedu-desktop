@@ -216,7 +216,8 @@ class FileInfoPanel extends ConsumerWidget {
     for (final folder in path) {
       if (folder.id == folderId) return folder.name;
     }
-    final folders = ref.watch(moveTargetFoldersProvider).value ?? const [];
+    final folders =
+        ref.watch(moveTargetFoldersProvider(null)).value ?? const [];
     for (final folder in folders) {
       if (folder.id == folderId) return folder.name;
     }

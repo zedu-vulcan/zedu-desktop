@@ -96,7 +96,9 @@ void main() {
       ),
     );
 
-    final folders = await container.read(moveTargetFoldersProvider.future);
+    final folders = await container.read(
+      moveTargetFoldersProvider(null).future,
+    );
 
     expect(folders.map((f) => f.id), ['docs', 'reports']);
   });
