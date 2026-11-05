@@ -26,10 +26,12 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
     final textTheme = context.textTheme;
 
     final channels = channelState.value ?? const <Channel>[];
+    // Leading or trailing spaces in the search must not hide a match (#396).
+    final query = _searchQuery.trim().toLowerCase();
     final filteredChannels = channels.where((c) {
-      if (_searchQuery.isEmpty) return true;
-      return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          c.description.toLowerCase().contains(_searchQuery.toLowerCase());
+      if (query.isEmpty) return true;
+      return c.name.toLowerCase().contains(query) ||
+          c.description.toLowerCase().contains(query);
     }).toList();
 
     return Column(

@@ -107,4 +107,32 @@ void main() {
     expect(find.text('No channels found.'), findsOneWidget);
     expect(find.text('Retry'), findsNothing);
   });
+
+  testWidgets('finds a channel when the search has extra spaces', (
+    tester,
+  ) async {
+    await _pump(tester, [
+      [_general],
+    ]);
+
+    await tester.enterText(find.byType(TextField), '  general  ');
+    await tester.pump();
+
+    expect(find.text('general'), findsOneWidget);
+    expect(find.text('No channels found.'), findsNothing);
+  });
+
+  testWidgets('shows every channel when the search is only spaces', (
+    tester,
+  ) async {
+    await _pump(tester, [
+      [_general],
+    ]);
+
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.pump();
+
+    expect(find.text('general'), findsOneWidget);
+    expect(find.text('No channels found.'), findsNothing);
+  });
 }
