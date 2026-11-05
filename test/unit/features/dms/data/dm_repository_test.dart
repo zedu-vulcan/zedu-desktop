@@ -199,4 +199,43 @@ void main() {
       );
     });
   });
+
+  group('DmRepository.getMessages', () {
+    void stubHistory(List<Map<String, dynamic>> threads) {
+      when(
+        () => api.get<Map<String, dynamic>>(
+          path: '/dms/channels/ch-1/threads',
+          queryParameters: {'page': 1, 'limit': DmRepository.pageSize},
+        ),
+      ).thenAnswer(
+        (_) async => ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {'data': threads},
+        ),
+      );
+    }
+
+    test('loads DM history from the DM threads route', () async {
+      stubHistory([
+        {'id': 'm-1', 'thread_id': 't-1', 'content': 'hello', 'user_id': 'u-2'},
+      ]);
+
+      final messages = await repository.getMessages('ch-1');
+
+      expect(messages.single['id'], 'm-1');
+      expect(messages.single['content'], 'hello');
+    });
+
+    test('maps thread documents to the chat id and content', () async {
+      stubHistory([
+        {'thread_id': 't-2', 'message': '<p>hi there</p>', 'user_id': 'u-2'},
+      ]);
+
+      final messages = await repository.getMessages('ch-1');
+
+      expect(messages.single['id'], 't-2');
+      expect(messages.single['content'], '<p>hi there</p>');
+      expect(messages.single['thread_id'], 't-2');
+    });
+  });
 }

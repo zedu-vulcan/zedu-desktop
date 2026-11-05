@@ -58,8 +58,10 @@ class DmRepository {
     String channelId, {
     int page = 1,
   }) async {
+    // DM history lives on the DM threads route, like the web app. The channel
+    // route answers 400 "user not in channel" for a direct message (#2703).
     final response = await _apiClient.get<Map<String, dynamic>>(
-      path: '/channels/$channelId/messages',
+      path: '/dms/channels/$channelId/threads',
       queryParameters: {'page': page, 'limit': pageSize},
     );
 
@@ -71,10 +73,14 @@ class DmRepository {
 
     if (messages is! List) return const [];
 
-    return messages
-        .whereType<Map<dynamic, dynamic>>()
-        .map((message) => Map<String, dynamic>.from(message))
-        .toList();
+    return messages.whereType<Map<dynamic, dynamic>>().map((raw) {
+      final message = Map<String, dynamic>.from(raw);
+      // DM thread documents carry the text in `message` and are keyed by
+      // `thread_id`; the chat reads `content` and `id`.
+      message['content'] ??= message['message'];
+      message['id'] ??= message['thread_id'];
+      return message;
+    }).toList();
   }
 
   /// Opens (or creates) the direct message with [participantId].
