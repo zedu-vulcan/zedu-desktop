@@ -34,8 +34,8 @@ class Channel {
       ownerId: json['owner_id'] as String? ?? '',
       archived: json['archived'] as bool? ?? false,
       topic: json['topic'] as String?,
-      unreadCount: json['unread_count'] as int? ?? 0,
-      membersCount: json['members_count'] as int? ?? 0,
+      unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
+      membersCount: (json['members_count'] as num?)?.toInt() ?? 0,
     );
   }
 
