@@ -119,7 +119,9 @@ class PeopleActionsNotifier extends Notifier<String?> {
           .read(dmRepositoryProvider)
           .openConversation(orgId: orgId, participantId: member.id);
       if (!ref.mounted) return false;
-      ref.read(selectedDmProvider.notifier).select(
+      ref
+          .read(selectedDmProvider.notifier)
+          .select(
             DmConversation(
               channelId: opened.channelId,
               username: member.displayName,
