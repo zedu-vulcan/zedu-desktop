@@ -228,6 +228,12 @@ class _SettingsNavigation extends StatelessWidget {
                     selected: selectedSection == UserProfileSection.billing,
                     onTap: () => onSectionSelected(UserProfileSection.billing),
                   ),
+                  _NavigationTile(
+                    icon: Icons.storage_outlined,
+                    label: 'Storage',
+                    selected: selectedSection == UserProfileSection.storage,
+                    onTap: () => onSectionSelected(UserProfileSection.storage),
+                  ),
                 ],
               ),
             ),

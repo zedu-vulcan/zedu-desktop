@@ -132,6 +132,7 @@ class _ProfileContent extends StatelessWidget {
               billing: state.billing ?? BillingInfo.empty(),
               onInvite: notifier.inviteMember,
             ),
+            UserProfileSection.storage => const StorageSection(),
           },
         ),
       ),
