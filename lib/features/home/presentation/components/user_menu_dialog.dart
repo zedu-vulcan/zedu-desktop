@@ -248,6 +248,17 @@ class UserMenuDialog extends ConsumerWidget {
                   if (context.mounted) context.go(AppRouter.buyCredits);
                 },
               ),
+              _MenuItemButton(
+                icon: Icons.help_outline,
+                label: 'Help & diagnostics…',
+                onTap: () async {
+                  Navigator.pop(context);
+                  await showDialog<void>(
+                    context: context,
+                    builder: (_) => const HelpMenuDialog(),
+                  );
+                },
+              ),
               const SizedBox(height: 8),
               Divider(height: 0, color: colors.divider),
               const SizedBox(height: 8),

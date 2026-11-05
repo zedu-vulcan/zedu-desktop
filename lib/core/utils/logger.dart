@@ -28,6 +28,20 @@ enum LogLevel {
 abstract final class AppLogger {
   AppLogger._();
 
+  static final List<String> _recentLogs = [];
+  static const int maxRecentLogs = 1000;
+
+  /// Returns an unmodifiable snapshot of recent captured log entries.
+  static List<String> get recentLogs => List.unmodifiable(_recentLogs);
+
+  /// Returns recent captured logs as formatted multiline text.
+  static String get recentLogsText => _recentLogs.isEmpty
+      ? 'No logs captured yet.'
+      : _recentLogs.join('\n');
+
+  /// Clears in-memory recent logs buffer (mainly for testing).
+  static void clearRecentLogs() => _recentLogs.clear();
+
   static void v(String message, {String? tag}) =>
       _log(LogLevel.verbose, message, tag: tag);
 
@@ -83,6 +97,17 @@ abstract final class AppLogger {
     Object? error,
     StackTrace? stackTrace,
   }) {
+    final timestamp = DateTime.now().toIso8601String();
+    final logTag = tag ?? 'AppLogger';
+    final errStr = error != null ? ' | Error: $error' : '';
+    final stStr = stackTrace != null ? ' | StackTrace: $stackTrace' : '';
+    final levelName = level.name.toUpperCase();
+    final line = '[$timestamp] [$levelName] [$logTag] $message$errStr$stStr';
+    if (_recentLogs.length >= maxRecentLogs) {
+      _recentLogs.removeAt(0);
+    }
+    _recentLogs.add(line);
+
     if (kReleaseMode && level.value < LogLevel.warning.value) return;
 
     dev.log(
