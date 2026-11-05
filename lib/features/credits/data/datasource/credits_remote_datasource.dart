@@ -50,7 +50,9 @@ class CreditsRemoteDataSourceImpl implements CreditsRemoteDataSource {
       return CreditUsageModel.fromJson(_mockUsage);
     }
     final response = await _api.get<Map<String, dynamic>>(
-      path: '/credits/usage/$orgId',
+      // `/credits/usage` returns a paginated list of per-agent rows. The
+      // workspace balance and totals are provided by the report endpoint.
+      path: '/credits/usage-report/$orgId',
     );
     return CreditUsageModel.fromJson(
       response.data['data'] as Map<String, dynamic>,

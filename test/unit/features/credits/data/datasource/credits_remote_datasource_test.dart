@@ -55,6 +55,64 @@ void main() {
     expect(usage.totalConsumed, 0);
   });
 
+  test('live usage reads the balance from the usage-report endpoint', () async {
+    final live = CreditsRemoteDataSourceImpl(
+      config: const AppConfig(
+        apiBaseUrl: 'https://example.invalid',
+        usesMockData: false,
+      ),
+      apiBaseService: api,
+    );
+    when(
+      () => api.get<Map<String, dynamic>>(path: '/credits/usage-report/org-1'),
+    ).thenAnswer(
+      (_) async => const ApiResponseModel(
+        data: {
+          'data': {'balance': 42, 'total_credited': 100, 'total_used': 58},
+        },
+        statusCode: 200,
+      ),
+    );
+
+    final usage = await live.getUsage('org-1');
+
+    expect(usage.balance, 42);
+    expect(usage.totalPurchased, 100);
+    expect(usage.totalConsumed, 58);
+    verify(
+      () => api.get<Map<String, dynamic>>(path: '/credits/usage-report/org-1'),
+    ).called(1);
+    verifyNever(
+      () => api.get<Map<String, dynamic>>(path: '/credits/usage/org-1'),
+    );
+  });
+
+  test('usage report reads the backend credited and used totals', () async {
+    final live = CreditsRemoteDataSourceImpl(
+      config: const AppConfig(
+        apiBaseUrl: 'https://example.invalid',
+        usesMockData: false,
+      ),
+      apiBaseService: api,
+    );
+    when(
+      () => api.get<Map<String, dynamic>>(path: '/credits/usage-report/org-1'),
+    ).thenAnswer(
+      (_) async => const ApiResponseModel(
+        data: {
+          'data': {'balance': 42, 'total_credited': 100, 'total_used': 58},
+        },
+        statusCode: 200,
+      ),
+    );
+
+    final report = await live.getUsageReport('org-1');
+
+    expect(report.balance, 42);
+    expect(report.purchased, 100);
+    expect(report.consumed, 58);
+  });
+
   test(
     'live verification sends the session to the existing endpoint',
     () async {
