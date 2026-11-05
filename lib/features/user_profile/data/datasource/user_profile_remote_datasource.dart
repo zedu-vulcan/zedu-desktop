@@ -15,6 +15,11 @@ abstract interface class UserProfileRemoteDataSource {
     required NotificationPreferences preferences,
   });
   Future<List<SecuritySessionModel>> getSecuritySessions();
+  Future<LoginAuditPage> getLoginAudit({
+    required String userId,
+    int page = 1,
+    int limit = 10,
+  });
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -254,6 +259,39 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
         .cast<Map<String, dynamic>>()
         .map(SecuritySessionModel.fromJson)
         .toList();
+  }
+
+  @override
+  Future<LoginAuditPage> getLoginAudit({
+    required String userId,
+    int page = 1,
+    int limit = 10,
+  }) async {
+    if (_config.usesMockData) return const LoginAuditPage.empty();
+    final response = await _apiBaseService.get<Map<String, dynamic>>(
+      path: '/users/$userId/login-audit',
+      queryParameters: {'page': page, 'limit': limit},
+    );
+    final data = response.data['data'] as List<dynamic>? ?? const [];
+    final pagination = response.data['pagination'];
+    final meta = pagination is Map<String, dynamic>
+        ? pagination
+        : const <String, dynamic>{};
+    return LoginAuditPage(
+      entries: data
+          .whereType<Map<String, dynamic>>()
+          .map(LoginAuditEntryModel.fromJson)
+          .toList(),
+      currentPage: _int(meta['current_page'], fallback: page),
+      totalPages: _int(meta['total_pages_count'], fallback: 0),
+    );
+  }
+
+  static int _int(Object? value, {required int fallback}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
   }
 
   @override

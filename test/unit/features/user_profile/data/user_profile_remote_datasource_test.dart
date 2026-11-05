@@ -226,4 +226,142 @@ void main() {
       );
     });
   });
+
+  group('UserProfileRemoteDataSourceImpl.getLoginAudit', () {
+    late MockApiBaseService api;
+    late UserProfileRemoteDataSourceImpl datasource;
+
+    const path = '/users/user-1/login-audit';
+
+    setUp(() {
+      api = MockApiBaseService();
+      datasource = UserProfileRemoteDataSourceImpl(
+        config: const AppConfig(apiBaseUrl: '', usesMockData: false),
+        apiBaseService: api,
+      );
+    });
+
+    void stub(Map<String, dynamic> body) {
+      when(
+        () => api.get<Map<String, dynamic>>(
+          path: any(named: 'path'),
+          queryParameters: any(named: 'queryParameters'),
+        ),
+      ).thenAnswer((_) async => ApiResponseModel(data: body, statusCode: 200));
+    }
+
+    test('requests the user login audit with page and limit', () async {
+      stub(const {
+        'data': <Map<String, dynamic>>[],
+        'pagination': {
+          'current_page': 2,
+          'page_count': 0,
+          'total_pages_count': 2,
+          'total_items': 10,
+        },
+      });
+
+      await datasource.getLoginAudit(userId: 'user-1', page: 2, limit: 5);
+
+      verify(
+        () => api.get<Map<String, dynamic>>(
+          path: path,
+          queryParameters: {'page': 2, 'limit': 5},
+        ),
+      ).called(1);
+    });
+
+    test('defaults to the first page of ten entries', () async {
+      stub(const {
+        'data': <Map<String, dynamic>>[],
+        'pagination': <String, dynamic>{},
+      });
+
+      await datasource.getLoginAudit(userId: 'user-1');
+
+      verify(
+        () => api.get<Map<String, dynamic>>(
+          path: path,
+          queryParameters: {'page': 1, 'limit': 10},
+        ),
+      ).called(1);
+    });
+
+    test('parses the entries and the pagination envelope', () async {
+      stub(const {
+        'data': [
+          {
+            'id': 'audit-1',
+            'device': 'Chrome',
+            'location': 'Lagos',
+            'ip_address': '102.89.0.1',
+            'login_at': '2026-05-08T13:07:00Z',
+            'created_at': '2026-05-08T13:07:05Z',
+            'is_live': true,
+          },
+          {
+            'id': 'audit-2',
+            'device': 'Safari',
+            'location': 'Abuja',
+            'ip_address': '102.89.0.2',
+            'login_at': null,
+            'created_at': null,
+            'is_live': false,
+          },
+        ],
+        'pagination': {
+          'current_page': 1,
+          'page_count': 2,
+          'total_pages_count': 3,
+          'total_items': 25,
+        },
+      });
+
+      final result = await datasource.getLoginAudit(userId: 'user-1');
+
+      expect(result.currentPage, 1);
+      expect(result.totalPages, 3);
+      expect(result.hasMore, isTrue);
+      expect(result.entries, hasLength(2));
+      expect(result.entries.first.id, 'audit-1');
+      expect(result.entries.first.device, 'Chrome');
+      expect(result.entries.first.loginAt, DateTime.utc(2026, 5, 8, 13, 7));
+      expect(result.entries.first.isLive, isTrue);
+      expect(result.entries.last.id, 'audit-2');
+      expect(result.entries.last.loginAt, isNull);
+      expect(result.entries.last.isLive, isFalse);
+    });
+
+    test('returns an empty page when the envelope has no pagination', () async {
+      stub(const {'data': null});
+
+      final result = await datasource.getLoginAudit(userId: 'user-1', page: 4);
+
+      expect(result.entries, isEmpty);
+      expect(result.currentPage, 4);
+      expect(result.totalPages, 0);
+      expect(result.hasMore, isFalse);
+    });
+
+    test(
+      'returns an empty page in mock mode without calling the API',
+      () async {
+        final mock = UserProfileRemoteDataSourceImpl(
+          config: const AppConfig(apiBaseUrl: '', usesMockData: true),
+          apiBaseService: api,
+        );
+
+        final result = await mock.getLoginAudit(userId: 'user-1');
+
+        expect(result.entries, isEmpty);
+        expect(result.totalPages, 0);
+        verifyNever(
+          () => api.get<Map<String, dynamic>>(
+            path: any(named: 'path'),
+            queryParameters: any(named: 'queryParameters'),
+          ),
+        );
+      },
+    );
+  });
 }

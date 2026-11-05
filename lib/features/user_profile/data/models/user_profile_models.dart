@@ -238,6 +238,50 @@ class SecuritySessionModel extends SecuritySession {
   }
 }
 
+class LoginAuditEntryModel extends LoginAuditEntry {
+  const LoginAuditEntryModel({
+    required super.id,
+    required super.device,
+    required super.location,
+    required super.ipAddress,
+    required super.isLive,
+    super.loginAt,
+    super.createdAt,
+  });
+
+  /// Accepts the loosely typed values the audit endpoint returns: missing
+  /// fields, numbers where strings are expected and non-boolean flags.
+  factory LoginAuditEntryModel.fromJson(Map<String, dynamic> json) {
+    return LoginAuditEntryModel(
+      id: _string(json['id']),
+      device: _string(json['device']),
+      location: _string(json['location']),
+      ipAddress: _string(json['ip_address']),
+      loginAt: _dateTime(json['login_at']),
+      createdAt: _dateTime(json['created_at']),
+      isLive: _bool(json['is_live']),
+    );
+  }
+
+  static String _string(Object? value) => value?.toString() ?? '';
+
+  static DateTime? _dateTime(Object? value) {
+    if (value is DateTime) return value;
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.toInt(), isUtc: true);
+    }
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  static bool _bool(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) return value.toLowerCase() == 'true' || value == '1';
+    return false;
+  }
+}
+
 class TeamMemberModel extends TeamMember {
   const TeamMemberModel({
     required super.id,

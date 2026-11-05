@@ -15,6 +15,11 @@ abstract interface class UserProfileRepository {
   });
 
   Future<Result<List<SecuritySession>>> getSecuritySessions();
+  Future<Result<LoginAuditPage>> getLoginAudit({
+    required String userId,
+    int page = 1,
+    int limit = 10,
+  });
   Future<Result<void>> changePassword({
     required String currentPassword,
     required String newPassword,
