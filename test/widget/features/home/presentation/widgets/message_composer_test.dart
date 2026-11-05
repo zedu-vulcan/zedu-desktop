@@ -74,7 +74,7 @@ Future<void> _pumpWithMentionList(
   );
   await tester.tap(find.byType(TextField));
   await tester.enterText(find.byType(TextField), '@');
-  await tester.pump();
+  await tester.pumpAndSettle();
 }
 
 void main() {
