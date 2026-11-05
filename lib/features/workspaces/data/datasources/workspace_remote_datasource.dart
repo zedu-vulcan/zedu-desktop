@@ -20,9 +20,7 @@ class WorkspaceRemoteDataSourceImpl implements WorkspaceRemoteDataSource {
     final List<Workspace> workspaces = [];
     for (final item in data) {
       if (item is Map<String, dynamic>) {
-        final rawId = item['id'];
-        final id =
-            rawId is String ? rawId.trim() : (rawId?.toString().trim() ?? '');
+        final id = item['id']?.toString().trim() ?? '';
         if (id.isEmpty) {
           // Without an id the workspace cannot be selected or addressed.
           // Skipping it is better than collapsing every id-less organisation
