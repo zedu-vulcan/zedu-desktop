@@ -177,4 +177,27 @@ void main() {
       expect(fakeChatHistory.retriedMessageId, 'failed-msg-1');
     },
   );
+  testWidgets(
+    'failed channel message remains in list with error indicator and actionable retry (#2624)',
+    (tester) async {
+      fakeChatHistory.messages = [
+        {
+          'id': 'failed-channel-msg',
+          'content': 'hello network disconnected',
+          'is_channel': true,
+          'status': 'failed',
+          'created_at': DateTime.now().toIso8601String(),
+        },
+      ];
+
+      await pumpList(tester, const Success(<ChannelMessage>[]));
+
+      expect(find.text('hello network disconnected'), findsOneWidget);
+      expect(find.text('Failed – Tap to retry'), findsOneWidget);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+
+      await tester.tap(find.text('Failed – Tap to retry'));
+      expect(fakeChatHistory.retriedMessageId, 'failed-channel-msg');
+    },
+  );
 }
