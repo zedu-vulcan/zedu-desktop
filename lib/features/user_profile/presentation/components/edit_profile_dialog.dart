@@ -500,12 +500,10 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            Center(
-                              child: TextButton.icon(
-                                onPressed: () {
-                                  // Upload photo placeholder
-                                },
+                              const SizedBox(height: 12),
+                              Center(
+                                child: TextButton.icon(
+                                  onPressed: null,
                                 icon: Icon(
                                   Icons.upload_outlined,
                                   size: 16,
@@ -522,9 +520,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                             ),
                             Center(
                               child: TextButton(
-                                onPressed: () {
-                                  // Remove photo placeholder
-                                },
+                                onPressed: null,
                                 child: Text(
                                   'Remove photo',
                                   style: context.textTheme.bodySmall?.copyWith(
