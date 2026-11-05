@@ -266,10 +266,131 @@ class _FilesSection extends ConsumerWidget {
     }
   }
 
+  Future<void> _download(
+    BuildContext context,
+    WidgetRef ref,
+    WorkspaceFile file,
+  ) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final outcome = await ref
+        .read(fileDownloadsProvider.notifier)
+        .download(file);
+    if (!overlay.mounted) return;
+    switch (outcome.status) {
+      case FileDownloadStatus.cancelled:
+        return;
+      case FileDownloadStatus.saved:
+        final folder = _folderName(outcome.path!);
+        AppToastService.showWith(
+          overlay,
+          type: AppToastType.success,
+          message: folder.isEmpty
+              ? 'Downloaded ${file.name}.'
+              : 'Downloaded ${file.name} to $folder.',
+        );
+      case FileDownloadStatus.failed:
+        AppToastService.showWith(
+          overlay,
+          type: AppToastType.error,
+          message: outcome.message!,
+        );
+    }
+  }
+
+  Future<void> _rename(BuildContext context, WorkspaceFile file) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final newName = await RenameFileDialog.show(context, file: file);
+    if (newName == null || !overlay.mounted) return;
+    AppToastService.showWith(
+      overlay,
+      type: AppToastType.success,
+      message: 'Renamed ${file.name} to $newName.',
+    );
+  }
+
+  Future<void> _move(BuildContext context, WorkspaceFile file) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final folder = await MoveFileDialog.show(context, file: file);
+    if (folder == null || !overlay.mounted) return;
+    AppToastService.showWith(
+      overlay,
+      type: AppToastType.success,
+      message: 'Moved ${file.name} to ${folder.name}.',
+    );
+  }
+
+  Future<void> _share(BuildContext context, WorkspaceFile file) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final outcome = await ShareFileDialog.show(context, file: file);
+    if (outcome == null || !overlay.mounted) return;
+    AppToastService.showWith(
+      overlay,
+      type: outcome.complete ? AppToastType.success : AppToastType.info,
+      message: outcome.message,
+    );
+  }
+
+  void _preview(BuildContext context, WidgetRef ref, WorkspaceFile file) =>
+      FilePreviewDialog.show(
+        context,
+        file: file,
+        onDownload: () {
+          if (context.mounted) _download(context, ref, file);
+        },
+        onOpenExternally: () {
+          if (context.mounted) _open(context, file);
+        },
+      );
+
+  Future<void> _togglePin(
+    BuildContext context,
+    WidgetRef ref,
+    WorkspaceFile file,
+  ) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final error = await ref.read(pinnedFilesProvider.notifier).toggle(file);
+    if (error == null || !overlay.mounted) return;
+    AppToastService.showWith(overlay, type: AppToastType.error, message: error);
+  }
+
+  Future<void> _delete(
+    BuildContext context,
+    WorkspaceFile file, {
+    required bool permanent,
+  }) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final deleted = await DeleteFileDialog.show(
+      context,
+      file: file,
+      permanent: permanent,
+    );
+    if (!deleted || !overlay.mounted) return;
+    AppToastService.showWith(
+      overlay,
+      type: AppToastType.success,
+      message: permanent
+          ? 'Deleted ${file.name} permanently.'
+          : 'Moved ${file.name} to Deleted files.',
+    );
+  }
+
+  /// Name of the folder holding [path], such as `Downloads`.
+  static String _folderName(String path) {
+    final parts = path.split(RegExp(r'[\\/]'))..removeWhere((p) => p.isEmpty);
+    return parts.length < 2 ? '' : parts[parts.length - 2];
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final page = ref.watch(filesListProvider);
     final sort = ref.watch(filesProvider.select((s) => s.sort));
+    final scope = ref.watch(filesProvider.select((s) => s.view));
+    final downloads = ref.watch(fileDownloadsProvider);
+    final isTrash = scope == FilesScope.trash;
+    // Deleted files can't be pinned, so they show no pins either.
+    final pinnedIds = isTrash
+        ? const <String>{}
+        : ref.watch(pinnedFilesProvider).value ?? const <String>{};
     final ownerName = _ownerNames(ref);
 
     return page.when(
@@ -289,15 +410,59 @@ class _FilesSection extends ConsumerWidget {
                 'Files in this list, or that match your filters, appear here.',
           );
         }
+        Widget table(List<WorkspaceFile> files) => FilesTable(
+          files: files,
+          ownerNameOf: (file) =>
+              file.owner.isNotEmpty ? file.owner : ownerName(file.userId),
+          // Clicking a file previews it in the app, as on web. Deleted files
+          // still open outside it.
+          onOpen: isTrash
+              ? (file) => _open(context, file)
+              : (file) => _preview(context, ref, file),
+          downloads: downloads,
+          pinnedIds: pinnedIds,
+          onDownload: isTrash ? null : (file) => _download(context, ref, file),
+          onPreview: isTrash ? null : (file) => _preview(context, ref, file),
+          onTogglePin: isTrash
+              ? null
+              : (file) => _togglePin(context, ref, file),
+          onRename: isTrash ? null : (file) => _rename(context, file),
+          onMove: isTrash ? null : (file) => _move(context, file),
+          onShare: isTrash ? null : (file) => _share(context, file),
+          onInfo: isTrash
+              ? null
+              : (file) => FileInfoPanel.show(
+                  context,
+                  file: file,
+                  owner: file.owner.isNotEmpty
+                      ? file.owner
+                      : ownerName(file.userId),
+                ),
+          onDelete: (file) => _delete(context, file, permanent: isTrash),
+          deletesPermanently: isTrash,
+        );
+
+        // Pinned files on this page come first, under their own heading, as
+        // on web.
+        final files = sort.apply(page.files);
+        final pinned = [
+          for (final f in files)
+            if (pinnedIds.contains(f.id)) f,
+        ];
+        final others = [
+          for (final f in files)
+            if (!pinnedIds.contains(f.id)) f,
+        ];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FilesTable(
-              files: sort.apply(page.files),
-              ownerNameOf: (file) =>
-                  file.owner.isNotEmpty ? file.owner : ownerName(file.userId),
-              onOpen: (file) => _open(context, file),
-            ),
+            if (pinned.isNotEmpty) ...[
+              const _PinnedHeading(),
+              const SizedBox(height: 8),
+              table(pinned),
+              if (others.isNotEmpty) const SizedBox(height: 24),
+            ],
+            if (others.isNotEmpty) table(others),
             if (page.totalPages > 1)
               _Pagination(
                 current: page.currentPage,
@@ -514,6 +679,30 @@ class _Message extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// "Pinned files", over the files the user pinned.
+class _PinnedHeading extends StatelessWidget {
+  const _PinnedHeading();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Row(
+      children: [
+        Icon(Icons.push_pin_outlined, size: 16, color: colors.textSecondary),
+        const SizedBox(width: 6),
+        Text(
+          'Pinned files',
+          style: context.textTheme.bodyMedium?.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: colors.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 }
