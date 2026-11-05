@@ -75,9 +75,13 @@ class WorkspaceFile {
 String _fileType(String fileType, String fileName) {
   final type = fileType.toLowerCase();
   if (type.isNotEmpty) {
-    // Accept a MIME type such as `image/png` as well as a bare extension.
-    return type.contains('/') ? type.split('/').last : type;
+    final sub = type.contains('/') ? type.split('/').last : type;
+    return RegExp(r'^[a-z0-9]{1,5}$').hasMatch(sub) ? sub : _fileExtension(fileName);
   }
+  return _fileExtension(fileName);
+}
+
+String _fileExtension(String fileName) {
   final dot = fileName.lastIndexOf('.');
   return dot == -1 ? '' : fileName.substring(dot + 1).toLowerCase();
 }
