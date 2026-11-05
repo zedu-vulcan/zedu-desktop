@@ -46,6 +46,8 @@ class _DesktopManagerState extends ConsumerState<DesktopManager>
         items: [
           MenuItem(key: 'show_window', label: 'Show Zedu'),
           MenuItem.separator(),
+          MenuItem(key: 'export_diagnostics', label: 'Export diagnostics'),
+          MenuItem.separator(),
           MenuItem(key: 'exit_app', label: 'Exit'),
         ],
       );
@@ -77,6 +79,8 @@ class _DesktopManagerState extends ConsumerState<DesktopManager>
     if (menuItem.key == 'show_window') {
       await windowManager.show();
       await windowManager.focus();
+    } else if (menuItem.key == 'export_diagnostics') {
+      await DiagnosticsService.handleExportDiagnostics(context);
     } else if (menuItem.key == 'exit_app') {
       await windowManager.destroy();
     }
