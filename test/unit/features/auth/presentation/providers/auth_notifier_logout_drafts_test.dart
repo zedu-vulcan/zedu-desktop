@@ -84,36 +84,43 @@ void main() {
   group('AuthNotifier.logout', () {
     tearDown(() => locator.reset());
 
-    test("signing out deletes the user's saved drafts", () async {
-      final disk = <String, String>{
-        'access_token': 'token',
-        'dm_draft_u1_org-1_ch-a': '{"text":"secret","updatedAt":1}',
-        'dm_draft_u2_org-1_ch-a': '{"text":"other user","updatedAt":2}',
-      };
-      final repo = MockAuthRepository();
-      locator.registerSingleton<SecureStorageService>(_storageOver(disk));
-      locator.registerSingleton<AuthInterceptor>(MockAuthInterceptor());
-      when(
-        () => repo.getCurrentUser(),
-      ).thenAnswer((_) async => Success(_user('u1')));
-      final container = ProviderContainer(
-        overrides: [authRepositoryProvider.overrideWithValue(repo)],
-      );
-      addTearDown(container.dispose);
+    test(
+      "signing out deletes the user's saved drafts and saved messages",
+      () async {
+        final disk = <String, String>{
+          'access_token': 'token',
+          'dm_draft_u1_org-1_ch-a': '{"text":"secret","updatedAt":1}',
+          'dm_draft_u2_org-1_ch-a': '{"text":"other user","updatedAt":2}',
+          'saved_messages_u1_org-1': '[]',
+          'saved_messages_u2_org-1': '[]',
+        };
+        final repo = MockAuthRepository();
+        locator.registerSingleton<SecureStorageService>(_storageOver(disk));
+        locator.registerSingleton<AuthInterceptor>(MockAuthInterceptor());
+        when(
+          () => repo.getCurrentUser(),
+        ).thenAnswer((_) async => Success(_user('u1')));
+        final container = ProviderContainer(
+          overrides: [authRepositoryProvider.overrideWithValue(repo)],
+        );
+        addTearDown(container.dispose);
 
-      final notifier = container.read(authNotifierProvider.notifier);
-      await pumpEventQueue();
-      expect(container.read(authNotifierProvider).user?.id, 'u1');
+        final notifier = container.read(authNotifierProvider.notifier);
+        await pumpEventQueue();
+        expect(container.read(authNotifierProvider).user?.id, 'u1');
 
-      await notifier.logout();
+        await notifier.logout();
 
-      expect(disk.containsKey('dm_draft_u1_org-1_ch-a'), isFalse);
-      expect(disk.containsKey('access_token'), isFalse);
-      expect(disk.containsKey('dm_draft_u2_org-1_ch-a'), isTrue);
-      expect(
-        container.read(authNotifierProvider).status,
-        AuthStatus.unauthenticated,
-      );
-    });
+        expect(disk.containsKey('dm_draft_u1_org-1_ch-a'), isFalse);
+        expect(disk.containsKey('saved_messages_u1_org-1'), isFalse);
+        expect(disk.containsKey('access_token'), isFalse);
+        expect(disk.containsKey('dm_draft_u2_org-1_ch-a'), isTrue);
+        expect(disk.containsKey('saved_messages_u2_org-1'), isTrue);
+        expect(
+          container.read(authNotifierProvider).status,
+          AuthStatus.unauthenticated,
+        );
+      },
+    );
   });
 }

@@ -4,6 +4,8 @@ import 'package:zedu/features/features.dart';
 
 class MockChannelRepository extends Mock implements ChannelRepository {}
 
+class MockSecureStorageService extends Mock implements SecureStorageService {}
+
 class FakeChatHistoryNotifier extends ChangeNotifier
     implements ChatHistoryNotifier {
   FakeChatHistoryNotifier(this.channelId);
@@ -34,10 +36,22 @@ class FakeChatHistoryNotifier extends ChangeNotifier
 void main() {
   late MockChannelRepository repository;
   late FakeChatHistoryNotifier fakeChatHistory;
+  late Map<String, String> savedValues;
+  late SavedMessagesStore savedStore;
 
   setUp(() {
     repository = MockChannelRepository();
     fakeChatHistory = FakeChatHistoryNotifier('ch-1');
+    savedValues = <String, String>{};
+    final storage = MockSecureStorageService();
+    when(() => storage.readData(any())).thenAnswer((invocation) async {
+      return savedValues[invocation.positionalArguments[0] as String];
+    });
+    when(() => storage.writeData(any(), any())).thenAnswer((invocation) async {
+      savedValues[invocation.positionalArguments[0] as String] =
+          invocation.positionalArguments[1] as String;
+    });
+    savedStore = SavedMessagesStore(storage, userId: 'user-1', orgId: 'org-1');
   });
 
   Future<void> pumpList(
@@ -56,6 +70,9 @@ void main() {
               chatHistoryProvider.overrideWith(
                 (ref, channelId) => chatNotifier ?? fakeChatHistory,
               ),
+              // The tile reads the saved list to draw its bookmark; this test
+              // only cares about the message content, so keep it local.
+              savedMessagesProvider.overrideWith((ref) => savedStore),
             ],
             retry: (_, _) => null,
             child: buildTestMaterialApp(
@@ -177,4 +194,25 @@ void main() {
       expect(fakeChatHistory.retriedMessageId, 'failed-msg-1');
     },
   );
+
+  testWidgets('saving a message keeps it in the saved store', (tester) async {
+    await pumpList(
+      tester,
+      const Success([
+        ChannelMessage(id: 'm-1', senderName: 'Ada', text: 'keep this'),
+      ]),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('keep this')));
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Save message'));
+    await tester.pumpAndSettle();
+
+    expect(savedStore.contains('ch-1', 'm-1'), isTrue);
+    expect(find.byTooltip('Remove from saved'), findsOneWidget);
+  });
 }

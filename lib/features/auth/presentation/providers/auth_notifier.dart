@@ -373,6 +373,14 @@ class AuthNotifier extends Notifier<AuthState> {
       } catch (error) {
         AppLogger.w('Could not remove drafts on logout - $error', tag: _tag);
       }
+      try {
+        await SavedMessagesStore.deleteAllForUser(_storage, userId);
+      } catch (error) {
+        AppLogger.w(
+          'Could not remove saved messages on logout - $error',
+          tag: _tag,
+        );
+      }
     }
     await _storage.deleteAccessToken();
     _bumpSession();

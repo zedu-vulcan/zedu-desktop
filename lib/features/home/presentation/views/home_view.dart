@@ -192,6 +192,9 @@ class _ChatAreaSwitcher extends ConsumerWidget {
     if (state == HomeSidebarType.files) {
       return const FilesView();
     }
+    if (state == HomeSidebarType.saved) {
+      return const SavedMessagesView();
+    }
     return const HomeChatArea();
   }
 }
@@ -402,6 +405,7 @@ class HomeChatArea extends ConsumerWidget {
               : ChannelMessageList(
                   key: ValueKey(channelId),
                   channelId: channelId,
+                  channelName: channelName,
                   empty: welcome,
                 ),
         ),
