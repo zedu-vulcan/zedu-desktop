@@ -226,4 +226,61 @@ void main() {
       );
     });
   });
+
+  group('UserProfileRemoteDataSourceImpl.getRolesAndPermissions (#720)', () {
+    late MockApiBaseService mockApi;
+    late UserProfileRemoteDataSourceImpl datasource;
+
+    setUp(() {
+      mockApi = MockApiBaseService();
+      datasource = UserProfileRemoteDataSourceImpl(
+        config: const AppConfig(apiBaseUrl: '', usesMockData: false),
+        apiBaseService: mockApi,
+      );
+    });
+
+    test(
+      'loads the selected organisation roles from its roles route',
+      () async {
+        when(
+          () => mockApi.get<Map<String, dynamic>>(
+            path: '/organisations/org-1/roles',
+          ),
+        ).thenAnswer(
+          (_) async => const ApiResponseModel<Map<String, dynamic>>(
+            statusCode: 200,
+            data: {
+              'data': [
+                {
+                  'id': 'role-1',
+                  'name': 'Manager',
+                  'description': 'Runs the workspace',
+                  'permissions': {
+                    'can_create_channels': true,
+                    'can_delete_org': false,
+                  },
+                },
+              ],
+            },
+          ),
+        );
+
+        final roles = await datasource.getRolesAndPermissions(orgId: 'org-1');
+
+        expect(roles.single.role, 'Manager');
+        expect(roles.single.description, 'Runs the workspace');
+        expect(roles.single.permissions, ['can_create_channels']);
+      },
+    );
+
+    test(
+      'returns no roles and sends no request without an organisation',
+      () async {
+        final roles = await datasource.getRolesAndPermissions();
+
+        expect(roles, isEmpty);
+        verifyZeroInteractions(mockApi);
+      },
+    );
+  });
 }

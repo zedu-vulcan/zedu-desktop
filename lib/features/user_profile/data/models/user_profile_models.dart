@@ -278,11 +278,21 @@ class RolePermissionModel extends RolePermission {
   });
 
   factory RolePermissionModel.fromJson(Map<String, dynamic> json) {
+    // Organisation role records use `name` and a map of permission flags,
+    // e.g. {"can_create_channels": true}; keep only the granted keys.
+    final rawPermissions = json['permissions'];
+    final permissions = switch (rawPermissions) {
+      final List<dynamic> list => list.cast<String>(),
+      final Map<dynamic, dynamic> map => [
+        for (final entry in map.entries)
+          if (entry.value == true) entry.key.toString(),
+      ],
+      _ => const <String>[],
+    };
     return RolePermissionModel(
-      role: json['role'] as String? ?? 'User',
+      role: json['role'] as String? ?? json['name'] as String? ?? 'User',
       description: json['description'] as String? ?? '',
-      permissions:
-          (json['permissions'] as List<dynamic>?)?.cast<String>() ?? const [],
+      permissions: permissions,
     );
   }
 }
