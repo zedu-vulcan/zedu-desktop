@@ -12,6 +12,22 @@ import 'package:zedu/core/core.dart';
 const String kDefaultDesktopGoogleClientId =
     '764182056638-08g88e196e643mhpa2tuv5dpr7iumd1j.apps.googleusercontent.com';
 
+/// Zedu's staging API host. Debug and profile builds fall back to it, so local
+/// development never writes to production by accident.
+const String kStagingApiBaseUrl = 'https://api.staging.zedu.chat/api/v1/';
+
+/// Zedu's production API host. Release builds fall back to it, so a shipped
+/// build that omits `API_BASE_URL` cannot silently talk to staging.
+const String kProductionApiBaseUrl = 'https://api.zedu.chat/api/v1/';
+
+/// The API host used when neither `--dart-define` nor `.env` supplies one.
+///
+/// Release builds default to production; debug and profile builds default to
+/// staging. Keeping the choice in one function makes it testable without
+/// rebuilding in release mode.
+String defaultApiBaseUrl({required bool isRelease}) =>
+    isRelease ? kProductionApiBaseUrl : kStagingApiBaseUrl;
+
 /// The website's Contact Sales page, opened from the Enterprise plan.
 const String kDefaultContactSalesUrl = 'https://zedu.chat/contact-sales';
 
@@ -22,30 +38,36 @@ class AppConfig {
     this.googleClientId = kDefaultDesktopGoogleClientId,
     this.googleClientSecret = '',
     this.contactSalesUrl = kDefaultContactSalesUrl,
+    this.webAppUrl = '',
   });
 
   /// Resolves config after [loadAppEnv] has run in [main] (root `.env` /
   /// `.env.example`, bundled as assets).
   ///
   /// Precedence: `--dart-define` wins, then dotenv keys from those files, then
-  /// defaults. See [String.fromEnvironment](https://api.flutter.dev/flutter/dart-ui/String/String.fromEnvironment.html).
+  /// the build-mode default from [defaultApiBaseUrl]: staging for debug and
+  /// profile builds, production for release builds. See [String.fromEnvironment](https://api.flutter.dev/flutter/dart-ui/String/String.fromEnvironment.html).
   factory AppConfig.fromEnvironment() {
     const defineApiBaseUrl = String.fromEnvironment('API_BASE_URL');
     const defineUsesMock = String.fromEnvironment('USE_MOCK_DATA');
     const defineClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
     const defineClientSecret = String.fromEnvironment('GOOGLE_CLIENT_SECRET');
+    const defineWebAppUrl = String.fromEnvironment('WEB_APP_URL');
 
     final envApiBaseUrl = dotenv.maybeGet('API_BASE_URL')?.trim();
     final envUsesMock = dotenv.maybeGet('USE_MOCK_DATA')?.trim();
     final envClientId = dotenv.maybeGet('GOOGLE_CLIENT_ID')?.trim();
     final envClientSecret = dotenv.maybeGet('GOOGLE_CLIENT_SECRET')?.trim();
+    final envWebAppUrl = dotenv.maybeGet('WEB_APP_URL')?.trim();
 
-    // Teams point the app at their own backend via --dart-define or .env; Zedu staging is the default.
+    // Teams point the app at their own backend via --dart-define or .env;
+    // otherwise the build mode decides, so release builds never default to
+    // staging.
     String apiBaseUrl = defineApiBaseUrl.isNotEmpty
         ? defineApiBaseUrl
         : (envApiBaseUrl?.isNotEmpty ?? false)
         ? envApiBaseUrl!
-        : 'https://api.staging.zedu.chat/api/v1/';
+        : defaultApiBaseUrl(isRelease: kReleaseMode);
 
     apiBaseUrl = apiBaseUrl.replaceAll('"', '').replaceAll("'", "");
 
@@ -76,6 +98,9 @@ class AppConfig {
       usesMockData: usesMockData,
       googleClientId: googleClientId,
       googleClientSecret: googleClientSecret,
+      webAppUrl: defineWebAppUrl.isNotEmpty
+          ? defineWebAppUrl
+          : envWebAppUrl ?? '',
     );
   }
 
@@ -84,6 +109,31 @@ class AppConfig {
   final String googleClientId;
   final String googleClientSecret;
   final String contactSalesUrl;
+
+  /// The web app's address, from `WEB_APP_URL`. Empty means [webBaseUrl]
+  /// works it out from [apiBaseUrl].
+  final String webAppUrl;
+
+  /// Where the web app runs, without a trailing slash, for links that open
+  /// in the browser (such as Buzz meetings). Defaults to the API host
+  /// without its `api.` prefix: `https://api.zedu.chat/api/v1/` gives
+  /// `https://zedu.chat`.
+  String get webBaseUrl {
+    final configured = webAppUrl.replaceAll('"', '').replaceAll("'", '').trim();
+    if (configured.isNotEmpty) {
+      return configured.endsWith('/')
+          ? configured.substring(0, configured.length - 1)
+          : configured;
+    }
+    final api = Uri.tryParse(apiBaseUrl);
+    if (api == null || api.host.isEmpty) return 'https://zedu.chat';
+    final host = api.host.startsWith('api.') ? api.host.substring(4) : api.host;
+    return Uri(
+      scheme: api.scheme.isEmpty ? 'https' : api.scheme,
+      host: host,
+      port: api.hasPort ? api.port : null,
+    ).toString();
+  }
 }
 
 bool _parseBool(String raw, {required bool defaultValue}) {

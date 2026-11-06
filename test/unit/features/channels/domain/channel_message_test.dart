@@ -57,5 +57,25 @@ void main() {
         'AT&T &bogus; &#xFFFFFFF; &#xD800; &lt',
       );
     });
+    test(
+      'preserves typed text with angle brackets, generics, and comparisons',
+      () {
+        expect(textOf('Use List<String> here'), 'Use List<String> here');
+        expect(
+          textOf('Call `Map<String, int> m` now'),
+          'Call `Map<String, int> m` now',
+        );
+        expect(
+          textOf('wrap it in a <div> element'),
+          'wrap it in a <div> element',
+        );
+        expect(textOf('if a<b and c>d then'), 'if a<b and c>d then');
+        expect(
+          textOf('Ada <ada@zedu.chat> wrote'),
+          'Ada <ada@zedu.chat> wrote',
+        );
+        expect(textOf('<T> is a generic type'), '<T> is a generic type');
+      },
+    );
   });
 }

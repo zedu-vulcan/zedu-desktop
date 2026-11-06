@@ -47,7 +47,6 @@ class FilesToolbar extends ConsumerWidget {
           value: state.sort,
           options: FilesSort.values,
           labelOf: (s) => s.label,
-          showsValue: false,
           allowsClear: false,
           onChanged: (sort) {
             if (sort != null) notifier.setSort(sort);

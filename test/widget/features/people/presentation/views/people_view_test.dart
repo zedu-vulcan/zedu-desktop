@@ -114,7 +114,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(people.searches, contains('grace'));
-    expect(find.text('Showing 1 of 1 members'), findsOneWidget);
+    expect(find.text('Showing 1 of 1 member'), findsOneWidget);
     // The sidebar keeps its own list.
     expect(find.text('Ada Lovelace'), findsOneWidget);
   });

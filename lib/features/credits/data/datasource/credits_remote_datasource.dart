@@ -49,11 +49,19 @@ class CreditsRemoteDataSourceImpl implements CreditsRemoteDataSource {
     if (_config.usesMockData) {
       return CreditUsageModel.fromJson(_mockUsage);
     }
+    // The workspace balance lives on the usage-report endpoint: /credits/usage
+    // returns a per-agent usage list (no balance) whose shape does not fit a
+    // Map cast, so the balance read from that route always failed.
     final response = await _api.get<Map<String, dynamic>>(
-      path: '/credits/usage/$orgId',
+      path: '/credits/usage-report/$orgId',
     );
-    return CreditUsageModel.fromJson(
-      response.data['data'] as Map<String, dynamic>,
+    final data = response.data['data'];
+    if (data is Map<String, dynamic>) return CreditUsageModel.fromJson(data);
+    // Surface the shape problem as a failure instead of reporting a fake,
+    // always-0 balance.
+    throw ApiFailure.fromParsingError(
+      'credits usage-report: expected a Map, got ${data.runtimeType}',
+      path: '/credits/usage-report/$orgId',
     );
   }
 

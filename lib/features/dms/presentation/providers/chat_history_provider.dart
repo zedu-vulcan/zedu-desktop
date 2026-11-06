@@ -1,11 +1,17 @@
-import 'dart:io' show File;
-
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 class ChatHistoryNotifier extends ChangeNotifier {
+  static const _tag = 'ChatHistoryNotifier';
+
   final String channelId;
   final Ref ref;
+  late final ComposerFileStore _fileStore;
+
+  /// Set in dispose(): an asynchronous continuation (polling response, save,
+  /// delete or retry) that lands after it must stay a silent no-op instead of
+  /// crashing on [notifyListeners] of a disposed notifier.
+  bool _isDisposed = false;
 
   List<Map<String, dynamic>> messages = [];
   bool isLoading = true;
@@ -27,7 +33,12 @@ class ChatHistoryNotifier extends ChangeNotifier {
   String? editingMessageId;
   final Map<String, Future<void>> _saveEditChains = {};
 
+  /// Messages whose edit is still being sent. A poll that lands meanwhile must
+  /// not put the old text back over the edit.
+  final Set<String> _editsInFlight = {};
+
   ChatHistoryNotifier(this.channelId, this.ref) {
+    _fileStore = ref.read(composerFileStoreProvider);
     _loadInitial();
   }
 
@@ -74,6 +85,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
   Future<void> _loadInitial() async {
     await _loadFirstPage();
+    if (_isDisposed) return;
     // Start polling for new messages now that the initial load is done.
     _startPolling();
   }
@@ -97,11 +109,19 @@ class ChatHistoryNotifier extends ChangeNotifier {
       page = 1;
       loadFailed = false;
       _markSeen(loaded);
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.e(
+        'Failed to load initial chat history for channel $channelId',
+        tag: _tag,
+        error: e,
+        stackTrace: st,
+      );
       loadFailed = true;
     } finally {
-      isLoading = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -144,9 +164,15 @@ class ChatHistoryNotifier extends ChangeNotifier {
   Future<void> _pollForNewMessages() async {
     // Until the history loads, every polled message would look new.
     if (loadFailed) return;
+    if (_isDisposed) return;
     try {
       final repository = ref.read(dmRepositoryProvider);
       final fresh = await repository.getMessages(channelId, page: 1);
+      if (_isDisposed) return;
+
+      // A message edited elsewhere keeps its id, so it is not "new": replace
+      // its text in place, without a notification or a second copy.
+      final changed = _applyEditedContent(fresh);
 
       bool hadNew = false;
       for (final msg in fresh) {
@@ -168,7 +194,14 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
       if (hadNew) {
         // Prepend only the genuinely new messages at the top.
-        final existingIds = messages.map((m) => m['id']?.toString()).toSet();
+        // A message just sent keeps its local id and stores the server's id as
+        // thread_id, so match on both or the poll adds a second copy of it.
+        final existingIds = <String?>{
+          for (final m in messages) ...[
+            m['id']?.toString(),
+            if (m['thread_id'] != null) m['thread_id'].toString(),
+          ],
+        };
         final newOnly = fresh
             .where(
               (m) =>
@@ -180,15 +213,66 @@ class ChatHistoryNotifier extends ChangeNotifier {
         if (newOnly.isNotEmpty) {
           messages = [...newOnly, ...messages];
           notifyListeners();
+          return;
         }
       }
+      if (changed) notifyListeners();
     } catch (_) {
       // Silent — polling failures should not surface to the UI.
     }
   }
 
+  /// Merges the server's current fields onto every loaded message with the
+  /// same id. Skips locally pending messages and messages being edited here,
+  /// and returns whether anything changed.
+  bool _applyEditedContent(List<Map<String, dynamic>> fresh) {
+    final latest = <String, Map<String, dynamic>>{
+      for (final m in fresh)
+        if (m['id'] != null && !_isDeleted(m)) m['id'].toString(): m,
+    };
+    var changed = false;
+    messages = messages.map((m) {
+      final id = m['id']?.toString();
+      if (id == null || !latest.containsKey(id)) return m;
+      if (m['status'] != null ||
+          _editsInFlight.contains(id) ||
+          editingMessageId == id) {
+        return m;
+      }
+      final updated = Map<String, dynamic>.from(m)..addAll(latest[id]!);
+      if (_sameJsonValue(updated, m)) return m;
+      changed = true;
+      return updated;
+    }).toList();
+    return changed;
+  }
+
+  bool _sameJsonValue(Object? a, Object? b) {
+    if (identical(a, b) || a == b) return true;
+    if (a is List && b is List) {
+      final first = List<Object?>.from(a);
+      final second = List<Object?>.from(b);
+      if (first.length != second.length) return false;
+
+      for (var index = 0; index < first.length; index++) {
+        if (!_sameJsonValue(first[index], second[index])) return false;
+      }
+      return true;
+    }
+    if (a is Map && b is Map) {
+      return a.length == b.length &&
+          a.entries.every(
+            (entry) =>
+                b.containsKey(entry.key) &&
+                _sameJsonValue(entry.value, b[entry.key]),
+          );
+    }
+    return false;
+  }
+
   @override
   void dispose() {
+    _isDisposed = true;
     (_pollingTimer as dynamic)?.cancel();
     // Recordings kept for messages that never sent are no longer needed.
     for (final options in _sendOptions.values) {
@@ -223,11 +307,19 @@ class ChatHistoryNotifier extends ChangeNotifier {
           newMessages.length >= DmRepository.pageSize &&
           !newMessages.any(_isCleared);
       page = nextPage;
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.e(
+        'Failed to load more messages for channel $channelId on page ${page + 1}',
+        tag: _tag,
+        error: e,
+        stackTrace: st,
+      );
       loadMoreFailed = true;
     } finally {
-      isLoading = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -247,7 +339,11 @@ class ChatHistoryNotifier extends ChangeNotifier {
   }
 
   // What each message was sent with, so a retry sends it the same way.
-  final Map<String, ({List<XFile>? media, bool isChannel})> _sendOptions = {};
+  final Map<
+    String,
+    ({List<XFile>? media, List<dynamic>? mentions, bool isChannel})
+  >
+  _sendOptions = {};
 
   /// Makes each optimistic message id unique, even for sends in the same
   /// millisecond: the id keys [_sendOptions] and the message's later update.
@@ -257,10 +353,9 @@ class ChatHistoryNotifier extends ChangeNotifier {
   /// the user picked are never deleted.
   Future<void> _deleteRecordings(List<XFile>? files) async {
     for (final file in files ?? const <XFile>[]) {
-      if (appRecordedPaths.remove(file.path)) {
-        try {
-          await File(file.path).delete();
-        } catch (_) {}
+      final result = await _fileStore.deleteRecording(file.path);
+      if (result case Failure(:final error)) {
+        AppLogger.w(error.message, tag: 'ChatHistoryNotifier');
       }
     }
   }
@@ -291,7 +386,11 @@ class ChatHistoryNotifier extends ChangeNotifier {
         ],
     };
 
-    _sendOptions[tempId] = (media: media, isChannel: isChannel);
+    _sendOptions[tempId] = (
+      media: media,
+      mentions: mentions,
+      isChannel: isChannel,
+    );
     messages = [optimisticMessage, ...messages];
     notifyListeners();
 
@@ -316,7 +415,14 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.e(
+        'Failed to send message in channel $channelId',
+        tag: _tag,
+        error: e,
+        stackTrace: st,
+      );
+      if (_isDisposed) return;
       messages = messages.map((m) {
         if (m['id'] == tempId) {
           final newMsg = Map<String, dynamic>.from(m);
@@ -326,13 +432,15 @@ class ChatHistoryNotifier extends ChangeNotifier {
         return m;
       }).toList();
     } finally {
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 
   Future<void> retryMessage(String messageId) async {
     final idx = messages.indexWhere((m) => m['id'] == messageId);
-    if (idx == -1) return;
+    // Status changes to sending synchronously below, so repeated callbacks
+    // cannot start another request for this message before the view rebuilds.
+    if (idx == -1 || messages[idx]['status'] != 'failed') return;
 
     final failedMsg = Map<String, dynamic>.from(messages[idx]);
     final content = failedMsg['content'] as String? ?? '';
@@ -349,6 +457,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
         channelId,
         content,
         media: options?.media,
+        mentions: options?.mentions,
         isChannel:
             failedMsg['is_channel'] as bool? ?? options?.isChannel ?? false,
       );
@@ -364,7 +473,14 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.e(
+        'Failed to retry message $messageId in channel $channelId',
+        tag: _tag,
+        error: e,
+        stackTrace: st,
+      );
+      if (_isDisposed) return;
       messages = messages.map((m) {
         if (m['id'] == messageId) {
           final newMsg = Map<String, dynamic>.from(m);
@@ -374,7 +490,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
         return m;
       }).toList();
     } finally {
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 
@@ -455,10 +571,29 @@ class ChatHistoryNotifier extends ChangeNotifier {
       final repository = ref.read(dmRepositoryProvider);
       await repository.deleteMessage(threadId: threadId, channelId: channelId);
     } catch (_) {
+      if (_isDisposed) return;
       _deletedIds.remove(messageId);
       messages = [...messages]
         ..insert(index.clamp(0, messages.length), removed);
       notifyListeners();
+    }
+  }
+
+  /// Pins the message on the server. Returns whether it was pinned.
+  Future<bool> pinMessage(String messageId) async {
+    final message = messages.firstWhere(
+      (m) => m['id'] == messageId,
+      orElse: () => const {},
+    );
+    if (message.isEmpty) return false;
+    final threadId = (message['thread_id'] ?? message['id']).toString();
+    try {
+      await ref
+          .read(dmRepositoryProvider)
+          .pinMessage(threadId: threadId, channelId: channelId);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -496,14 +631,22 @@ class ChatHistoryNotifier extends ChangeNotifier {
     }
     notifyListeners();
 
+    _editsInFlight.add(messageId);
     try {
       final repository = ref.read(dmRepositoryProvider);
       await repository.editMessage(
-        channelId,
+        messageId,
         content: newContent,
         threadId: threadId,
       );
-    } catch (_) {
+    } catch (e, st) {
+      AppLogger.e(
+        'Failed to save edit for message $messageId in channel $channelId',
+        tag: _tag,
+        error: e,
+        stackTrace: st,
+      );
+      if (_isDisposed) return;
       messages = messages.map((m) {
         if (m['id'] == messageId && m['content'] == newContent) {
           final reverted = Map<String, dynamic>.from(m);
@@ -513,11 +656,13 @@ class ChatHistoryNotifier extends ChangeNotifier {
         return m;
       }).toList();
       notifyListeners();
+    } finally {
+      _editsInFlight.remove(messageId);
     }
   }
 }
 
-final chatHistoryProvider =
-    ChangeNotifierProvider.autoDispose.family<ChatHistoryNotifier, String>(
+final chatHistoryProvider = ChangeNotifierProvider.autoDispose
+    .family<ChatHistoryNotifier, String>(
       (ref, channelId) => ChatHistoryNotifier(channelId, ref),
     );

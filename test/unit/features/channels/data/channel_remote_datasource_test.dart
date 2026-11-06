@@ -78,4 +78,60 @@ void main() {
       );
     });
   });
+
+  group('ChannelRemoteDataSourceImpl.updateChannelTopicOrDescription', () {
+    late MockApiBaseService mockApi;
+    late ChannelRemoteDataSourceImpl datasource;
+
+    setUp(() {
+      mockApi = MockApiBaseService();
+      datasource = ChannelRemoteDataSourceImpl(apiBaseService: mockApi);
+    });
+
+    void stubPatch(Map<String, dynamic> body) {
+      when(
+        () => mockApi.patch<Map<String, dynamic>>(
+          path: '/channels/ch-1',
+          data: body,
+        ),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          data: {'status': 'success'},
+          statusCode: 200,
+        ),
+      );
+    }
+
+    test('saves the topic with PATCH /channels/{id}', () async {
+      stubPatch({'topic': 'Release notes'});
+
+      await datasource.updateChannelTopicOrDescription(
+        channelId: 'ch-1',
+        topic: 'Release notes',
+      );
+
+      verify(
+        () => mockApi.patch<Map<String, dynamic>>(
+          path: '/channels/ch-1',
+          data: {'topic': 'Release notes'},
+        ),
+      ).called(1);
+    });
+
+    test('saves the description with PATCH /channels/{id}', () async {
+      stubPatch({'description': 'Where we plan launches'});
+
+      await datasource.updateChannelTopicOrDescription(
+        channelId: 'ch-1',
+        description: 'Where we plan launches',
+      );
+
+      verify(
+        () => mockApi.patch<Map<String, dynamic>>(
+          path: '/channels/ch-1',
+          data: {'description': 'Where we plan launches'},
+        ),
+      ).called(1);
+    });
+  });
 }

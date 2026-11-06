@@ -68,7 +68,7 @@ class MentionSuggestionList extends StatelessWidget {
                       children: [
                         CircleAvatar(
                           radius: 14,
-                          backgroundColor: const Color(0xFF6458F5),
+                          backgroundColor: colors.primary,
                           backgroundImage:
                               p.avatarUrl != null && p.avatarUrl!.isNotEmpty
                               ? NetworkImage(p.avatarUrl!)

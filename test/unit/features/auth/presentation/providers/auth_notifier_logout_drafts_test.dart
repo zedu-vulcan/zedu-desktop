@@ -29,9 +29,8 @@ User _user(String id) => User(
 MockSecureStorageService _storageOver(Map<String, String> disk) {
   final storage = MockSecureStorageService();
   when(() => storage.readAll()).thenAnswer((_) async => Map.of(disk));
-  when(
-    () => storage.readData(any()),
-  ).thenAnswer((i) async => disk[i.positionalArguments.first as String]);
+  when(() => storage.readData(any()))
+      .thenAnswer((i) async => disk[i.positionalArguments.first as String]);
   when(() => storage.writeData(any(), any())).thenAnswer((i) async {
     disk[i.positionalArguments[0] as String] =
         i.positionalArguments[1] as String;
@@ -39,9 +38,8 @@ MockSecureStorageService _storageOver(Map<String, String> disk) {
   when(() => storage.deleteValue(any())).thenAnswer((i) async {
     disk.remove(i.positionalArguments.first as String);
   });
-  when(
-    () => storage.getAccessToken(),
-  ).thenAnswer((_) async => disk['access_token']);
+  when(() => storage.getAccessToken())
+      .thenAnswer((_) async => disk['access_token']);
   when(() => storage.deleteAccessToken()).thenAnswer((_) async {
     disk.remove('access_token');
   });
@@ -93,9 +91,8 @@ void main() {
       final repo = MockAuthRepository();
       locator.registerSingleton<SecureStorageService>(_storageOver(disk));
       locator.registerSingleton<AuthInterceptor>(MockAuthInterceptor());
-      when(
-        () => repo.getCurrentUser(),
-      ).thenAnswer((_) async => Success(_user('u1')));
+      when(() => repo.getCurrentUser())
+          .thenAnswer((_) async => Success(_user('u1')));
       final container = ProviderContainer(
         overrides: [authRepositoryProvider.overrideWithValue(repo)],
       );
@@ -115,5 +112,33 @@ void main() {
         AuthStatus.unauthenticated,
       );
     });
+    test(
+      "logout completes even if draft deletion encounters an error",
+      () async {
+        final storage = MockSecureStorageService();
+        when(() => storage.readAll()).thenThrow(Exception('disk error'));
+        when(() => storage.deleteAccessToken()).thenAnswer((_) async {});
+        final repo = MockAuthRepository();
+        locator.registerSingleton<SecureStorageService>(storage);
+        locator.registerSingleton<AuthInterceptor>(MockAuthInterceptor());
+        when(() => repo.getCurrentUser())
+            .thenAnswer((_) async => Success(_user('u1')));
+        final container = ProviderContainer(
+          overrides: [authRepositoryProvider.overrideWithValue(repo)],
+        );
+        addTearDown(container.dispose);
+
+        final notifier = container.read(authNotifierProvider.notifier);
+        await pumpEventQueue();
+        expect(container.read(authNotifierProvider).user?.id, 'u1');
+
+        await notifier.logout();
+
+        expect(
+          container.read(authNotifierProvider).status,
+          AuthStatus.unauthenticated,
+        );
+      },
+    );
   });
 }

@@ -33,19 +33,39 @@ class ChannelMessage {
       avatarUrl:
           nonEmpty(json['avatar_url']) ?? nonEmpty(json['default_avatar_url']),
       // Messages sent from the web app arrive as HTML (`<p>hi</p>`).
-      text: _decodeHtmlEntities(
-        (json['message']?.toString() ?? '')
-            .replaceAll(
-              RegExp(r'</(p|div|li)>\s*<(p|div|li|ul|ol)\b[^>]*>|<br\s*/?>'),
-              '\n',
-            )
-            .replaceAll(RegExp(r'<[^>]*>'), ''),
-      ).trim(),
+      text: _cleanMessageText(json['message']?.toString() ?? ''),
       createdAt: DateTime.tryParse(
         json['created_at']?.toString() ?? '',
       )?.toLocal(),
       status: json['status']?.toString(),
     );
+  }
+
+  static final _htmlBlock = RegExp(
+    r'^\s*<(p|div|blockquote|pre|h[1-6]|ul|ol|table)\b',
+    caseSensitive: false,
+  );
+
+  static final _htmlTag = RegExp(
+    r'<(/?)(p|div|blockquote|pre|h[1-6]|ul|ol|li|strong|b|em|i|s|del|strike|code|a|span|br|hr|table|tbody|thead|tr|td|th)\b[^>]*>',
+    caseSensitive: false,
+  );
+
+  static String _cleanMessageText(String raw) {
+    if (!_htmlBlock.hasMatch(raw)) {
+      return _decodeHtmlEntities(raw).trim();
+    }
+    return _decodeHtmlEntities(
+      raw
+          .replaceAll(
+            RegExp(
+              r'</(p|div|li)>\s*<(p|div|li|ul|ol)\b[^>]*>|<br\s*/?>',
+              caseSensitive: false,
+            ),
+            '\n',
+          )
+          .replaceAll(_htmlTag, ''),
+    ).trim();
   }
 
   /// Decodes in a single pass, so `&amp;lt;` stays the literal text `&lt;`.

@@ -482,7 +482,7 @@ class _TabLabel extends StatelessWidget {
                   fontWeight: active ? FontWeight.w600 : FontWeight.w400,
                   color: active
                       ? context.colors.primary
-                      : const Color(0xFF6B7280),
+                      : context.colors.textSecondary,
                 ),
               ),
               const SizedBox(width: 8),
@@ -490,8 +490,8 @@ class _TabLabel extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: active
-                      ? const Color(0xFFE9E9FF)
-                      : const Color(0xFFF3F4F6),
+                      ? context.colors.primaryBg
+                      : context.colors.divider,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -499,7 +499,7 @@ class _TabLabel extends StatelessWidget {
                   style: context.textTheme.labelSmall?.copyWith(
                     color: active
                         ? context.colors.primary
-                        : const Color(0xFF6B7280),
+                        : context.colors.textSecondary,
                     fontSize: 10,
                   ),
                 ),

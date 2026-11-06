@@ -67,6 +67,9 @@ void main() {
     when(() => history.messages).thenReturn([]);
     when(() => history.isLoading).thenReturn(false);
     when(() => history.hasMore).thenReturn(false);
+    when(() => history.loadFailed).thenReturn(false);
+    when(() => history.loadMoreFailed).thenReturn(false);
+    when(() => history.historyCleared).thenReturn(false);
     final drafts = MockDraftStore();
     when(() => drafts.load(any())).thenAnswer((_) async => null);
 
@@ -83,15 +86,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(Dialog), findsNothing);
 
     await tester.tap(find.text('View Profile'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(Dialog), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byType(AlertDialog),
+        of: find.byType(Dialog),
         matching: find.text('Card Tester'),
       ),
       findsOneWidget,

@@ -252,4 +252,22 @@ void main() {
     expect(_copyIconBeside('Not provided'), findsNothing);
     expect(_copyIconBeside('hassanat@example.com'), findsOneWidget);
   });
+
+  testWidgets('header close button has accessible tooltip and closes panel', (
+    t,
+  ) async {
+    final c = await _pump(t);
+    final closeBtn = find.byTooltip('Close');
+    expect(closeBtn, findsOneWidget);
+
+    final icon = find.descendant(
+      of: closeBtn,
+      matching: find.byIcon(Icons.close),
+    );
+    expect(icon, findsOneWidget);
+
+    await t.tap(closeBtn);
+    await t.pump();
+    expect(c.read(personalProfilePanelProvider), isFalse);
+  });
 }

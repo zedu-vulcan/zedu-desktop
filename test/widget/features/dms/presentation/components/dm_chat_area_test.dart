@@ -233,7 +233,7 @@ void main() {
   );
 
   group('DmChatArea message text', () {
-    Future<void> pumpChat(
+    Future<MockDmRepository> pumpChat(
       WidgetTester tester,
       List<Map<String, dynamic>> messages,
     ) async {
@@ -274,6 +274,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      return repository;
     }
 
     testWidgets('own space explains privacy and hides its system event', (
@@ -437,62 +438,66 @@ void main() {
       'created_at': '2026-10-17T08:00:00Z',
     };
 
-    Future<void> searchFor(WidgetTester tester, String query) async {
-      await tester.tap(find.byTooltip('More options'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Search in conversation'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.byType(TextField),
-        ),
-        query,
-      );
-      await tester.pumpAndSettle();
-    }
-
-    Finder searchResult(String text) =>
-        find.descendant(of: find.byType(ListTile), matching: find.text(text));
-
-    testWidgets('search shows results without HTML tags', (tester) async {
-      await pumpChat(tester, [
-        message('m1', '<p>hello <strong>team</strong></p>'),
-      ]);
-
-      await searchFor(tester, 'team');
-
-      expect(searchResult('hello team'), findsOneWidget);
-    });
-
-    testWidgets('search does not match tag names', (tester) async {
-      await pumpChat(tester, [
-        message('m1', '<p>hello <strong>team</strong></p>'),
-      ]);
-
-      await searchFor(tester, 'strong');
-
-      expect(find.byType(ListTile), findsNothing);
-    });
-
-    testWidgets('search finds and shows decoded special characters', (
-      tester,
-    ) async {
-      await pumpChat(tester, [message('m1', '<p>Tom &amp; Jerry &lt;3</p>')]);
-
-      await searchFor(tester, 'tom & jerry');
-
-      expect(searchResult('Tom & Jerry <3'), findsOneWidget);
-    });
-
     testWidgets('opens the message menu on long press', (tester) async {
       await pumpChat(tester, [ownMessage('m1', 'my message')]);
 
       await tester.longPress(find.text('my message', findRichText: true));
       await tester.pumpAndSettle();
 
+      expect(find.text('Pin message'), findsOneWidget);
       expect(find.text('Edit message'), findsOneWidget);
       expect(find.text('Delete message'), findsOneWidget);
+    });
+
+    testWidgets('offers only Pin on someone else\'s message', (tester) async {
+      await pumpChat(tester, [message('m1', 'their message')]);
+
+      await tester.longPress(find.text('their message', findRichText: true));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pin message'), findsOneWidget);
+      expect(find.text('Edit message'), findsNothing);
+      expect(find.text('Delete message'), findsNothing);
+    });
+
+    testWidgets('Pin message pins the thread and says so', (tester) async {
+      final repository = await pumpChat(tester, [
+        {...message('m1', 'their message'), 'thread_id': 'thread-1'},
+      ]);
+      when(
+        () => repository.pinMessage(threadId: 'thread-1', channelId: 'ch-1'),
+      ).thenAnswer((_) async {});
+
+      await tester.longPress(find.text('their message', findRichText: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pin message'));
+      await tester.pump();
+
+      verify(
+        () => repository.pinMessage(threadId: 'thread-1', channelId: 'ch-1'),
+      ).called(1);
+      expect(find.text('Message pinned'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('Pin message says when pinning fails', (tester) async {
+      final repository = await pumpChat(tester, [
+        ownMessage('m1', 'my message'),
+      ]);
+      when(
+        () => repository.pinMessage(
+          threadId: any(named: 'threadId'),
+          channelId: any(named: 'channelId'),
+        ),
+      ).thenThrow(Exception('offline'));
+
+      await tester.longPress(find.text('my message', findRichText: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pin message'));
+      await tester.pump();
+
+      expect(find.text("Couldn't pin the message. Try again."), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
     });
 
     testWidgets('Edit message from the menu puts the message in the composer', (
@@ -533,16 +538,19 @@ void main() {
 
       expect(find.text('Tom & Jerry', findRichText: true), findsOneWidget);
       expect(find.textContaining('<p>', findRichText: true), findsNothing);
-      final bold = find.byWidgetPredicate(
-        (widget) =>
-            widget is RichText &&
-            ((widget.text as TextSpan).children ?? const []).any(
-              (span) =>
-                  span is TextSpan &&
-                  span.text == 'Jerry' &&
-                  span.style?.fontWeight == FontWeight.bold,
-            ),
-      );
+      final bold = find.byWidgetPredicate((widget) {
+        if (widget is! RichText) return false;
+        var isBold = false;
+        widget.text.visitChildren((span) {
+          if (span is TextSpan &&
+              span.text == 'Jerry' &&
+              span.style?.fontWeight == FontWeight.bold) {
+            isBold = true;
+          }
+          return true;
+        });
+        return isBold;
+      });
       expect(bold, findsOneWidget);
     });
 

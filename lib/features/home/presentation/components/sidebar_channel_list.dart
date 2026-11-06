@@ -22,6 +22,7 @@ class SidebarChannelList extends ConsumerWidget {
             .where(
               (c) =>
                   !c.archived &&
+                  c.hasAccess &&
                   (c.organisationId.isEmpty || c.organisationId == orgId),
             )
             .toList();
@@ -41,7 +42,7 @@ class SidebarChannelList extends ConsumerWidget {
                   activeChat.id == channel.name,
               onTap: () => ref
                   .read(activeChatProvider.notifier)
-                  .selectChannel(channel.name),
+                  .selectChannel(channel.name, channelId: channel.id),
             ),
         ],
       ),

@@ -240,6 +240,7 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
         children: [
           if (_showMentions)
             Container(
+              key: const ValueKey('message_composer_mentions'),
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.symmetric(vertical: 4),
               decoration: BoxDecoration(
@@ -257,10 +258,10 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
               child: Column(
                 children: teamMembers.map((member) {
                   final name = member.name ?? member.email;
-                  final initial = avatarInitial(
-                    member.name,
-                    fallback: avatarInitial(member.email),
-                  );
+                  final trimmedName = name.trim();
+                  final initial = trimmedName.isNotEmpty
+                      ? trimmedName.characters.first.toUpperCase()
+                      : '?';
                   return InkWell(
                     onTap: () => _insertMention(name),
                     child: Padding(
@@ -300,6 +301,7 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
             ),
           if (_isFocused)
             Container(
+              key: const ValueKey('message_composer_toolbar'),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: colors.background,
@@ -346,6 +348,7 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
               ),
             ),
           Container(
+            key: const ValueKey('message_composer_input_box'),
             decoration: BoxDecoration(
               color: colors.background,
               border: Border.all(
@@ -368,7 +371,11 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
                     );
                     if (result != null) {
                       setState(() {
-                        _attachedFiles.addAll(result.names.whereType<String>());
+                        _attachedFiles.addAll(
+                          result.files
+                              .map((f) => f.path)
+                              .whereType<String>(),
+                        );
                       });
                     }
                   },
@@ -420,7 +427,7 @@ class _MessageComposerState extends ConsumerState<MessageComposer> {
                     ),
                   ),
                 ),
-                if (_controller.text.isEmpty && !_isRecording)
+                if (_controller.text.isEmpty && _attachedFiles.isEmpty && !_isRecording)
                   IconButton(
                     onPressed: _startRecording,
                     icon: Icon(Icons.mic_none, color: colors.textHint),

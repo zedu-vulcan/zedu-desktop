@@ -189,6 +189,12 @@ class _SettingsNavigation extends StatelessWidget {
                         onSectionSelected(UserProfileSection.notifications),
                   ),
                   _NavigationTile(
+                    icon: Icons.desktop_windows_outlined,
+                    label: 'Desktop',
+                    selected: selectedSection == UserProfileSection.desktop,
+                    onTap: () => onSectionSelected(UserProfileSection.desktop),
+                  ),
+                  _NavigationTile(
                     icon: Icons.lock_outline,
                     label: 'Security',
                     selected: selectedSection == UserProfileSection.security,

@@ -3,6 +3,7 @@ import 'package:zedu/features/features.dart';
 
 abstract class ChannelRemoteDataSource {
   Future<List<Channel>> fetchChannels(String orgId);
+  Future<Map<String, int>> fetchChannelUnreadCounts(String orgId);
   Future<Channel> createChannel({
     required String name,
     required String description,
@@ -18,6 +19,7 @@ abstract class ChannelRemoteDataSource {
   });
   Future<void> archiveChannel(String channelId, bool archived);
   Future<void> leaveChannel(String channelId);
+  Future<void> joinChannel(String channelId);
   Future<List<String>> fetchOrganisationMemberIds(String orgId);
   Future<List<String>> fetchChannelMemberIds(String channelId);
   Future<List<DmParticipant>> fetchChannelMembers(String channelId);
@@ -55,9 +57,41 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     );
     final data = response.data['data'] as List?;
     if (data == null) return [];
-    return data
+    final channels = data
         .map((e) => Channel.fromJson(e as Map<String, dynamic>))
         .toList();
+    // The browse-all endpoint always returns unread_count 0. The
+    // user-channels endpoint fills it, so merge those counts in. A failure
+    // there must not fail the whole list: the title just counts DMs then.
+    Map<String, int> unreadCounts = const {};
+    try {
+      unreadCounts = await fetchChannelUnreadCounts(orgId);
+    } catch (_) {
+      return channels;
+    }
+    if (unreadCounts.isEmpty) return channels;
+    return [
+      for (final channel in channels)
+        unreadCounts.containsKey(channel.id)
+            ? channel.copyWith(unreadCount: unreadCounts[channel.id]!)
+            : channel,
+    ];
+  }
+
+  @override
+  Future<Map<String, int>> fetchChannelUnreadCounts(String orgId) async {
+    final response = await apiBaseService.get<Map<String, dynamic>>(
+      path: '/organisations/$orgId/user-channels',
+    );
+    final data = response.data['data'] as List?;
+    if (data == null) return const {};
+    final counts = <String, int>{};
+    for (final entry in data) {
+      final channel = Channel.fromJson(entry as Map<String, dynamic>);
+      if (channel.id.isEmpty) continue;
+      counts[channel.id] = channel.unreadCount;
+    }
+    return counts;
   }
 
   @override
@@ -112,8 +146,10 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     if (topic != null) data['topic'] = topic;
     if (description != null) data['description'] = description;
 
-    await apiBaseService.put<Map<String, dynamic>>(
-      path: '/channels/$channelId/',
+    // The backend saves topic/description edits on PATCH /channels/{id}, the
+    // route the web app uses; a PUT to '/channels/{id}/' never saved (#1432).
+    await apiBaseService.patch<Map<String, dynamic>>(
+      path: '/channels/$channelId',
       data: data,
     );
   }
@@ -134,6 +170,14 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
   }
 
   @override
+  Future<void> joinChannel(String channelId) async {
+    await apiBaseService.post<Map<String, dynamic>>(
+      path: '/channels/$channelId/join',
+      data: const <String, dynamic>{},
+    );
+  }
+
+  @override
   Future<List<String>> fetchOrganisationMemberIds(String orgId) {
     // People only: this endpoint leaves bots out unless include_bots=true.
     return _fetchAllMemberIds('/organisations/$orgId/users');
@@ -150,12 +194,14 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     return [
       for (final member in members)
         if ((member['id'] as String? ?? '').isNotEmpty &&
-            (member['username'] as String? ?? '').isNotEmpty)
+            _memberField(member, 'username').isNotEmpty)
           DmParticipant(
             userId: member['id'] as String,
-            username: member['username'] as String,
+            username: _memberField(member, 'username'),
             email: member['email'] as String? ?? '',
-            avatarUrl: member['avatar_url'] as String?,
+            avatarUrl: _memberField(member, 'avatar_url').isEmpty
+                ? null
+                : _memberField(member, 'avatar_url'),
           ),
     ];
   }
@@ -184,6 +230,15 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
         .cast<Map<String, dynamic>>()
         .map(ChannelMessage.fromJson)
         .toList();
+  }
+
+  // The channel users route nests username and avatar_url under profile.
+  String _memberField(Map<String, dynamic> member, String field) {
+    final profile = member['profile'];
+    final nested = profile is Map<String, dynamic> ? profile[field] : null;
+    if (nested is String && nested.isNotEmpty) return nested;
+    final topLevel = member[field];
+    return topLevel is String ? topLevel : '';
   }
 
   Future<List<String>> _fetchAllMemberIds(String path) async {

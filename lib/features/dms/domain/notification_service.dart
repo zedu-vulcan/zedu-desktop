@@ -14,6 +14,21 @@ final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService(ref);
 });
 
+/// The saved Settings > Notifications preferences for the selected workspace,
+/// or null while loading or when they cannot be loaded. Refreshed when the
+/// workspace changes or the preferences are saved.
+final desktopNotificationPreferencesProvider =
+    FutureProvider<NotificationPreferences?>((ref) async {
+      final orgId = ref.watch(currentOrgIdProvider);
+      final result = await ref
+          .watch(userProfileRepositoryProvider)
+          .getNotificationPreferences(orgId: orgId.isEmpty ? null : orgId);
+      return switch (result) {
+        Success<NotificationPreferences>() => result.value,
+        Failure<NotificationPreferences>() => null,
+      };
+    });
+
 class NotificationService {
   final Ref _ref;
   final GoRouter? _router;
@@ -73,6 +88,13 @@ class NotificationService {
     if (settings.isMuted(senderId)) return;
 
     if (!forceShow) {
+      final allowed = desktopNotificationAllowed(
+        preferences: _ref.read(desktopNotificationPreferencesProvider).value,
+        status: authState.user?.status,
+        now: DateTime.now(),
+      );
+      if (!allowed) return;
+
       final isFocused = await (_isFocused?.call() ?? _defaultIsFocused());
       final selectedChannel = _ref.read(selectedDmProvider)?.channelId;
 

@@ -1,3 +1,4 @@
+import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 class ProfileAccountModel extends ProfileAccount {
@@ -206,7 +207,7 @@ class OrganizationProfileModel extends OrganizationProfile {
           json['nature_of_business'] as String? ??
           json['type'] as String? ??
           '',
-      country: json['country'] as String? ?? '',
+      country: countryDisplayName(json['country'] as String? ?? ''),
     );
   }
 

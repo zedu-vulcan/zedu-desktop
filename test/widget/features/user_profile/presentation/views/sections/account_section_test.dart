@@ -1,3 +1,4 @@
+import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 import '../../../../../../helpers/helpers.dart';
@@ -31,6 +32,51 @@ void main() {
     timezone: 'Africa/Lagos',
   );
 
+  testWidgets('shows the initials when there is no avatar', (tester) async {
+    await _pump(tester, account);
+
+    expect(find.text('AL'), findsOneWidget);
+    expect(find.byIcon(Icons.person), findsNothing);
+    expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('shows the avatar when there is one', (tester) async {
+    await _pump(
+      tester,
+      account.copyWith(avatarUrl: 'https://cdn.zedu.test/ada.png'),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect((image.image as NetworkImage).url, 'https://cdn.zedu.test/ada.png');
+    expect(find.text('AL'), findsNothing);
+  });
+
+  testWidgets('shows the initials when the avatar fails to load', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      account.copyWith(avatarUrl: 'https://cdn.zedu.test/broken.png'),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image));
+    final fallback = image.errorBuilder!(
+      tester.element(find.byType(Image)),
+      Exception('404'),
+      null,
+    );
+    await tester.pumpWidget(buildTestMaterialApp(Scaffold(body: fallback)));
+
+    expect(find.text('AL'), findsOneWidget);
+  });
+
+  testWidgets('treats a blank avatar link as no avatar', (tester) async {
+    await _pump(tester, account.copyWith(avatarUrl: '   '));
+
+    expect(find.text('AL'), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
+  });
+
   testWidgets('shows the saved username as the handle', (tester) async {
     await _pump(tester, account.copyWith(username: 'CountessAda'));
 
@@ -56,5 +102,36 @@ void main() {
     await _pump(tester, account.copyWith(username: '   '));
 
     expect(find.text('@adalovelace'), findsOneWidget);
+  });
+
+  testWidgets('binds handle text color to context.colors.textSecondary', (
+    tester,
+  ) async {
+    BuildContext? sectionContext;
+    await tester.pumpWidget(
+      buildTestMaterialApp(
+        Builder(
+          builder: (context) {
+            sectionContext = context;
+            return Scaffold(
+              body: SingleChildScrollView(
+                child: AccountSection(
+                  account: account.copyWith(username: 'CountessAda'),
+                  isSaving: false,
+                  onSave: (_) {},
+                  onDelete: () async {},
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    final handleText = tester.widget<Text>(find.text('@CountessAda'));
+    expect(
+      handleText.style?.color,
+      equals(sectionContext!.colors.textSecondary),
+    );
   });
 }

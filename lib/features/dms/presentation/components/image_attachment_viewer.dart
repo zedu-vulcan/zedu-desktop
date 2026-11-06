@@ -37,22 +37,49 @@ class _ImageAttachmentViewerState extends State<ImageAttachmentViewer> {
 
   final _transformationController = TransformationController();
   double _scale = 1;
+  Size _viewportSize = Size.zero;
   int _quarterTurns = 0;
   bool _saving = false;
 
   bool get _isNetwork => widget.imageUrl.startsWith('http');
 
   @override
+  void initState() {
+    super.initState();
+    _transformationController.addListener(_syncScale);
+  }
+
+  @override
   void dispose() {
+    _transformationController.removeListener(_syncScale);
     _transformationController.dispose();
     super.dispose();
   }
 
+  /// Keeps [_scale] in step with the viewer, so the buttons also see zoom
+  /// from the mouse wheel, trackpad or pinch.
+  void _syncScale() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    if ((scale - _scale).abs() < 0.0001) return;
+    setState(() => _scale = scale);
+  }
+
+  /// Zooms by [factor] around the middle of the viewer, keeping any pan.
   void _zoomBy(double factor) {
-    final next = (_scale * factor).clamp(_minScale, _maxScale);
-    if (next == _scale) return;
-    _transformationController.value = Matrix4.diagonal3Values(next, next, 1);
-    setState(() => _scale = next);
+    final matrix = _transformationController.value;
+    final current = matrix.getMaxScaleOnAxis();
+    final next = (current * factor).clamp(_minScale, _maxScale);
+    if ((next - current).abs() < 0.0001) return;
+    final ratio = next / current;
+    final center = _viewportSize.center(Offset.zero);
+    final translation = matrix.getTranslation();
+    // A point p on screen maps to p' = center + ratio * (p - center), so the
+    // point under the middle of the viewer stays where it is.
+    _transformationController.value = Matrix4.identity()
+      ..setEntry(0, 0, next)
+      ..setEntry(1, 1, next)
+      ..setEntry(0, 3, center.dx + ratio * (translation.x - center.dx))
+      ..setEntry(1, 3, center.dy + ratio * (translation.y - center.dy));
   }
 
   void _rotate() {
@@ -142,16 +169,21 @@ class _ImageAttachmentViewerState extends State<ImageAttachmentViewer> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: InteractiveViewer(
-                transformationController: _transformationController,
-                minScale: _minScale,
-                maxScale: _maxScale,
-                child: Center(
-                  child: RotatedBox(
-                    quarterTurns: _quarterTurns,
-                    child: _buildImage(colors),
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  _viewportSize = constraints.biggest;
+                  return InteractiveViewer(
+                    transformationController: _transformationController,
+                    minScale: _minScale,
+                    maxScale: _maxScale,
+                    child: Center(
+                      child: RotatedBox(
+                        quarterTurns: _quarterTurns,
+                        child: _buildImage(colors),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             Positioned(

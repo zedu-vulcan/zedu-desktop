@@ -21,6 +21,10 @@ class WorkspaceFile {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// `private` or `public`, as `GET /files/file/{id}` reports it. Empty when
+  /// unknown: the files list leaves it out.
+  final String accessType;
+
   const WorkspaceFile({
     required this.id,
     required this.name,
@@ -34,6 +38,7 @@ class WorkspaceFile {
     this.owner = '',
     this.createdAt,
     this.updatedAt,
+    this.accessType = '',
   });
 
   static const _imageTypes = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'};
@@ -68,6 +73,7 @@ class WorkspaceFile {
       owner: text(['uploader_display_name', 'owner']),
       createdAt: DateTime.tryParse(text(['created_at']))?.toLocal(),
       updatedAt: DateTime.tryParse(text(['updated_at']))?.toLocal(),
+      accessType: text(['access_type']).toLowerCase(),
     );
   }
 }

@@ -108,4 +108,17 @@ void main() {
 
     expect(fieldText(tester), 'budget');
   });
+
+  testWidgets('shows the active sort order after it is selected', (
+    tester,
+  ) async {
+    await pumpToolbar(tester);
+
+    await tester.tap(find.byTooltip('Sort'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Oldest to newest').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Oldest to newest'), findsOneWidget);
+  });
 }
