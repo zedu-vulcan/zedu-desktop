@@ -37,11 +37,19 @@ class _HomeViewState extends ConsumerState<HomeView> {
       body: Column(
         children: [
           const _HomeAppBar(),
+          const OfflineStatusIndicator(),
           Expanded(
             child: Row(
               children: [
                 AppSidebarRail(activeType: ref.watch(homeSidebarProvider)),
-                ResizableSidebar(child: const _MainSidebarSwitcher()),
+                // Buzz is a full-width page, as on the web. The sidebar
+                // stays mounted so it keeps the width the user dragged it to.
+                Visibility(
+                  visible:
+                      ref.watch(homeSidebarProvider) != HomeSidebarType.buzz,
+                  maintainState: true,
+                  child: ResizableSidebar(child: const _MainSidebarSwitcher()),
+                ),
                 Expanded(
                   child: Stack(
                     children: [
@@ -192,6 +200,9 @@ class _ChatAreaSwitcher extends ConsumerWidget {
     if (state == HomeSidebarType.files) {
       return const FilesView();
     }
+    if (state == HomeSidebarType.buzz) {
+      return const BuzzView();
+    }
     return const HomeChatArea();
   }
 }
@@ -209,84 +220,108 @@ class _MainSidebar extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const WorkspaceSwitcherHeader(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-            child: Row(
-              children: [
-                Icon(Icons.arrow_drop_down, color: colors.onPrimary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Channels',
-                  style: TextStyle(
-                    color: colors.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SidebarChannelList(),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Material(
-              color: colors.onPrimary.withValues(alpha: 0.05),
-              shape: RoundedRectangleBorder(
-                side: BorderSide(
-                  color: colors.onPrimary.withValues(alpha: 0.24),
-                ),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                hoverColor: colors.onPrimary.withValues(alpha: 0.1),
-                onTap: () => ref
-                    .read(activeChatProvider.notifier)
-                    .selectChannelDirectory(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'View all channels',
+          // Scrolls when the window is too short for every section.
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.arrow_drop_down,
+                          color: colors.onPrimary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Channels',
                           style: TextStyle(
-                            color: colors.onPrimary.withValues(alpha: 0.7),
-                            fontSize: 13,
+                            color: colors.onPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SidebarChannelList(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Material(
+                      color: colors.onPrimary.withValues(alpha: 0.05),
+                      shape: RoundedRectangleBorder(
+                        side: BorderSide(
+                          color: colors.onPrimary.withValues(alpha: 0.24),
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        hoverColor: colors.onPrimary.withValues(alpha: 0.1),
+                        onTap: () => ref
+                            .read(activeChatProvider.notifier)
+                            .selectChannelDirectory(),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'View all channels',
+                                  style: TextStyle(
+                                    color: colors.onPrimary.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right,
+                                color: colors.onPrimary.withValues(alpha: 0.7),
+                                size: 16,
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                      Icon(
-                        Icons.chevron_right,
-                        color: colors.onPrimary.withValues(alpha: 0.7),
-                        size: 16,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  const _AddChannelButton(),
+                  const SidebarDmSection(),
+                  const SizedBox(height: 20),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.arrow_right,
+                          color: colors.onPrimary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'People',
+                          style: TextStyle(
+                            color: colors.onPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-          const _AddChannelButton(),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Icon(Icons.arrow_right, color: colors.onPrimary, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'People',
-                  style: TextStyle(
-                    color: colors.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -347,10 +382,25 @@ class HomeChatArea extends ConsumerWidget {
         ? (chat.id ?? 'general')
         : 'general';
     Channel? selected;
-    for (final item in channels) {
-      if (item.name.toLowerCase() == channelName.toLowerCase()) {
-        selected = item;
-        break;
+    // Two channels can differ only in letter case, so the picked id wins over
+    // the name. The name still finds #general at the start, before any pick.
+    final pickedId = chat.type == ActiveChatType.channel
+        ? chat.channelId
+        : null;
+    if (pickedId != null) {
+      for (final item in channels) {
+        if (item.id == pickedId) {
+          selected = item;
+          break;
+        }
+      }
+    }
+    if (selected == null) {
+      for (final item in channels) {
+        if (item.name.toLowerCase() == channelName.toLowerCase()) {
+          selected = item;
+          break;
+        }
       }
     }
 
@@ -390,13 +440,16 @@ class HomeChatArea extends ConsumerWidget {
                   empty: welcome,
                 ),
         ),
-        DmMessageComposer(
-          key: ValueKey(selected?.id ?? channelName),
-          recipientName: '#$channelName',
-          channelId: selected?.id ?? '',
-          participants: members,
-          isChannel: true,
-        ),
+        if (selected?.archived == true)
+          _ArchivedChannelBanner(channelName: channelName)
+        else
+          DmMessageComposer(
+            key: ValueKey(selected?.id ?? channelName),
+            recipientName: '#$channelName',
+            channelId: selected?.id ?? '',
+            participants: members,
+            isChannel: true,
+          ),
       ],
     );
   }
@@ -407,6 +460,7 @@ class HomeChatArea extends ConsumerWidget {
     Channel? channel,
   ) {
     final colors = context.colors;
+    final topic = channel?.topic?.trim() ?? '';
 
     return Container(
       height: 60,
@@ -417,15 +471,31 @@ class HomeChatArea extends ConsumerWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              '# $channelName',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: colors.textPrimary,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '# $channelName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                // The topic set in Edit channel, shown under the name so it
+                // is visible once saved (#2852); hidden when empty.
+                if (topic.isNotEmpty)
+                  Text(
+                    topic,
+                    key: const ValueKey('channel_header_topic'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: colors.textSecondary),
+                  ),
+              ],
             ),
           ),
           _HeaderAction(icon: Icons.headphones_outlined, label: 'Start Buzz'),
@@ -470,6 +540,38 @@ class HomeChatArea extends ConsumerWidget {
           ),
           const SizedBox(height: 32),
           const _InviteCard(),
+        ],
+      ),
+    );
+  }
+}
+
+/// Replaces the composer of an archived channel: read-only, as on the web.
+class _ArchivedChannelBanner extends StatelessWidget {
+  const _ArchivedChannelBanner({required this.channelName});
+
+  final String channelName;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: colors.divider)),
+        color: colors.primaryBg,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 18, color: colors.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '#$channelName is archived and read-only.',
+              style: TextStyle(fontSize: 14, color: colors.textSecondary),
+            ),
+          ),
         ],
       ),
     );
@@ -544,7 +646,9 @@ class _ChannelHeaderMenu extends ConsumerWidget {
     switch (result) {
       case Success<void>():
         // Open another channel so the header never shows one we left.
-        final remaining = ref.read(channelProvider).value ?? const <Channel>[];
+        final remaining = (ref.read(channelProvider).value ?? const <Channel>[])
+            .where((c) => !c.archived && c.hasAccess)
+            .toList();
         ref
             .read(activeChatProvider.notifier)
             .selectChannel(
@@ -559,9 +663,14 @@ class _ChannelHeaderMenu extends ConsumerWidget {
         AppToastService.showWith(
           overlay,
           type: AppToastType.error,
-          message: error.message.isEmpty
-              ? 'Could not leave #${channel.name}'
-              : error.message,
+          message: switch (error.kind) {
+            ApiFailureKind.unknown || ApiFailureKind.parsing =>
+              'Could not leave #${channel.name}. Please try again.',
+            _ =>
+              error.friendlyMessage.isEmpty
+                  ? 'Could not leave #${channel.name}'
+                  : error.friendlyMessage,
+          },
         );
     }
   }

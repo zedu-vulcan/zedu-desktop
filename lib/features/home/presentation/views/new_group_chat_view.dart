@@ -92,13 +92,7 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
   }
 
   String _getMemberInitials(String displayName) {
-    final clean = displayName.trim();
-    if (clean.isEmpty) return '?';
-    final runes = clean.runes.toList();
-    if (runes.length > 1) {
-      return String.fromCharCodes(runes.take(2)).toUpperCase();
-    }
-    return String.fromCharCode(runes.first).toUpperCase();
+    return avatarInitials(displayName);
   }
 
   Future<void> _handleCreate() async {
@@ -264,100 +258,108 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
                             top: 60,
                             left: 0,
                             right: 0,
-                            child: Material(
-                              elevation: 8,
-                              shadowColor: colors.textPrimary.withValues(
-                                alpha: 0.1,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  maxHeight: 250,
+                            // Inside the field's tap region so pressing a row
+                            // doesn't unfocus the field (and hide the list)
+                            // before the tap completes.
+                            child: TextFieldTapRegion(
+                              child: Material(
+                                elevation: 8,
+                                shadowColor: colors.textPrimary.withValues(
+                                  alpha: 0.1,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: colors.divider),
-                                ),
-                                child: ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: _filteredMembers.length,
-                                  itemBuilder: (context, index) {
-                                    final member = _filteredMembers[index];
-                                    final name = _getMemberDisplayName(member);
-                                    final initials = _getMemberInitials(name);
-                                    return InkWell(
-                                      onTap: () =>
-                                          _toggleMemberSelection(member),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          border: Border(
-                                            bottom: BorderSide(
-                                              color: colors.divider,
-                                              width: 0.5,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    maxHeight: 250,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: colors.divider),
+                                  ),
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: _filteredMembers.length,
+                                    itemBuilder: (context, index) {
+                                      final member = _filteredMembers[index];
+                                      final name = _getMemberDisplayName(
+                                        member,
+                                      );
+                                      final initials = _getMemberInitials(name);
+                                      return InkWell(
+                                        onTap: () =>
+                                            _toggleMemberSelection(member),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border(
+                                              bottom: BorderSide(
+                                                color: colors.divider,
+                                                width: 0.5,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            // Avatar
-                                            CircleAvatar(
-                                              radius: 16,
-                                              backgroundColor: colors.primary
-                                                  .withValues(alpha: 0.1),
-                                              child: Text(
-                                                initials,
-                                                style: TextStyle(
-                                                  color: colors.primary,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.bold,
+                                          child: Row(
+                                            children: [
+                                              // Avatar
+                                              CircleAvatar(
+                                                radius: 16,
+                                                backgroundColor: colors.primary
+                                                    .withValues(alpha: 0.1),
+                                                child: Text(
+                                                  initials,
+                                                  style: TextStyle(
+                                                    color: colors.primary,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            const SizedBox(width: 12),
+                                              const SizedBox(width: 12),
 
-                                            // Text
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    name,
-                                                    style: TextStyle(
-                                                      color: colors.textPrimary,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 14,
+                                              // Text
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      name,
+                                                      style: TextStyle(
+                                                        color:
+                                                            colors.textPrimary,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 14,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    member.email,
-                                                    style: TextStyle(
-                                                      color: colors.textHint,
-                                                      fontSize: 12,
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      member.email,
+                                                      style: TextStyle(
+                                                        color: colors.textHint,
+                                                        fontSize: 12,
+                                                      ),
                                                     ),
-                                                  ),
-                                                ],
+                                                  ],
+                                                ),
                                               ),
-                                            ),
 
-                                            // Checkbox / Add icon
-                                            Icon(
-                                              Icons.add_circle_outline,
-                                              color: colors.primary,
-                                              size: 20,
-                                            ),
-                                          ],
+                                              // Checkbox / Add icon
+                                              Icon(
+                                                Icons.add_circle_outline,
+                                                color: colors.primary,
+                                                size: 20,
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 ),
                               ),
                             ),

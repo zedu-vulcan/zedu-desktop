@@ -13,6 +13,36 @@ class _FakeUserProfileNotifier extends UserProfileNotifier {
   }
 }
 
+TeamMember _member(String id, String name) => TeamMember(
+  id: id,
+  email: '${name.toLowerCase()}@zedu.chat',
+  role: 'member',
+  dateJoined: '2026-01-01',
+  status: TeamMemberStatus.active,
+  name: name,
+);
+
+Future<void> _pumpView(WidgetTester tester, List<TeamMember> members) async {
+  tester.view.physicalSize = const Size(1400, 1000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        userProfileNotifierProvider.overrideWith(
+          () => _FakeUserProfileNotifier(members),
+        ),
+      ],
+      child: buildTestMaterialApp(const Scaffold(body: NewGroupChatView())),
+    ),
+  );
+}
+
+// A desktop pointer unfocuses a text field on press outside it, which is what
+// removed the suggestion list before a row tap could complete.
+final _desktopPointer = TargetPlatformVariant.only(TargetPlatform.macOS);
+
 void main() {
   final testMembers = [
     const TeamMember(
@@ -125,9 +155,48 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(of: find.byType(Chip), matching: find.text('EM')),
+        find.descendant(of: find.byType(Chip), matching: find.text('E')),
         findsOneWidget,
       );
     },
   );
+
+  group('NewGroupChatView suggestions', () {
+    final alice = _member('u1', 'Alice');
+    final bob = _member('u2', 'Bob');
+
+    testWidgets('tapping a suggestion adds the member', (tester) async {
+      await _pumpView(tester, [alice, bob]);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      expect(find.text('alice@zedu.chat'), findsOneWidget);
+
+      // Pump between press and release, as a real click does: the frame in
+      // between is where the list used to be removed.
+      final click = await tester.startGesture(
+        tester.getCenter(find.text('alice@zedu.chat')),
+      );
+      await tester.pump();
+      await click.up();
+      await tester.pump();
+
+      expect(find.byType(Chip), findsOneWidget);
+      expect(find.widgetWithText(Chip, 'Alice'), findsOneWidget);
+      expect(find.textContaining('Selected: 1/2'), findsOneWidget);
+    }, variant: _desktopPointer);
+
+    testWidgets('tapping elsewhere closes the list', (tester) async {
+      await _pumpView(tester, [alice, bob]);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      expect(find.text('alice@zedu.chat'), findsOneWidget);
+
+      await tester.tap(find.text('New message'));
+      await tester.pump();
+
+      expect(find.text('alice@zedu.chat'), findsNothing);
+    }, variant: _desktopPointer);
+  });
 }

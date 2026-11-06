@@ -69,13 +69,112 @@ void main() {
     expect(state().query.search, 'logo');
   });
 
-  test('sorting does not change the query sent to the server', () {
+  test('sorting goes back to the first page without changing the request', () {
+    notifier().setPage(2);
     final before = state().query;
     notifier().setSort(FilesSort.oldestFirst);
 
     expect(state().sort, FilesSort.oldestFirst);
-    expect(state().query, before);
+    expect(state().page, 1);
+    // The sort is applied by the client; the server is still asked for the
+    // same filters, at page 1.
+    expect(state().query, isNot(before));
+    expect(
+      state().query.toQueryParameters(),
+      before.copyWith(page: 1).toQueryParameters(),
+    );
   });
+
+  group('the files list', () {
+    late _PagedRepository repository;
+    late ProviderContainer files;
+
+    FilesNotifier filesNotifier() => files.read(filesProvider.notifier);
+
+    setUp(() {
+      repository = _PagedRepository();
+      files = ProviderContainer(
+        overrides: [
+          currentOrgIdProvider.overrideWithValue('org-1'),
+          filesRepositoryProvider.overrideWithValue(repository),
+        ],
+      );
+      addTearDown(files.dispose);
+    });
+
+    test('newest first reads the page the user asked for', () async {
+      filesNotifier().setPage(2);
+      final page = await files.read(filesListProvider.future);
+
+      expect(repository.pages, [2]);
+      expect(page.currentPage, 2);
+    });
+
+    test('oldest first reads the server pages backwards', () async {
+      repository.totalPages = 3;
+      filesNotifier().setSort(FilesSort.oldestFirst);
+      final page = await files.read(filesListProvider.future);
+
+      expect(repository.pages, [1, 3]);
+      expect(page.currentPage, 1);
+      expect(page.totalPages, 3);
+      expect(page.files.map((file) => file.id), [
+        for (var i = 1; i <= 10; i++) 'p3-$i',
+      ]);
+    });
+
+    test('the next page is the server page before the last one', () async {
+      repository.totalPages = 3;
+      filesNotifier().setSort(FilesSort.oldestFirst);
+      await files.read(filesListProvider.future);
+
+      filesNotifier().setPage(2);
+      final page = await files.read(filesListProvider.future);
+
+      expect(repository.pages.last, 2);
+      expect(page.currentPage, 2);
+      expect(page.files.first.id, 'p2-1');
+    });
+  });
+
+  for (final (kind, expected) in [
+    (
+      ApiFailureKind.network,
+      'No internet connection. Check your network and try again.',
+    ),
+    (
+      ApiFailureKind.server,
+      'Something went wrong on our end. Please try again later.',
+    ),
+    (ApiFailureKind.unknown, 'Could not create the folder. Try again.'),
+    (ApiFailureKind.parsing, 'Could not create the folder. Try again.'),
+    (ApiFailureKind.client, 'Folder name already exists'),
+  ]) {
+    test(
+      'create-folder failure $kind returns safe copy and clears loading',
+      () async {
+        final repository = _UploadRepository()
+          ..folderError = ApiFailure(
+            message: kind == ApiFailureKind.client
+                ? 'Folder name already exists'
+                : '<html>internal-host failure</html>',
+            kind: kind,
+          );
+        final folders = ProviderContainer(
+          overrides: [
+            currentOrgIdProvider.overrideWithValue('org-1'),
+            filesRepositoryProvider.overrideWithValue(repository),
+          ],
+        );
+        addTearDown(folders.dispose);
+        final message = await folders
+            .read(filesActionsProvider.notifier)
+            .createFolder('docs');
+        expect(message, expected);
+        expect(folders.read(filesActionsProvider).isCreatingFolder, isFalse);
+      },
+    );
+  }
 
   group('uploadFiles', () {
     late ProviderContainer uploads;
@@ -121,8 +220,57 @@ void main() {
   });
 }
 
+/// Server pages of ten files, newest first: page 1 holds the newest files and
+/// every later page holds older ones.
+class _PagedRepository implements FilesRepository {
+  int totalPages = 1;
+  final pages = <int>[];
+
+  @override
+  Future<Result<FilesPage>> fetchFiles(FilesQuery query) async {
+    pages.add(query.page);
+    return Success(
+      FilesPage(
+        files: [
+          for (var i = 10; i >= 1; i--)
+            WorkspaceFile(
+              id: 'p${query.page}-$i',
+              name: 'p${query.page}-$i',
+              updatedAt: DateTime(
+                2026,
+                1,
+                1,
+              ).add(Duration(days: (query.page - 1) * 10 + i)),
+            ),
+        ],
+        currentPage: query.page,
+        totalPages: totalPages,
+      ),
+    );
+  }
+
+  @override
+  Future<Result<FoldersPage>> fetchFolders({
+    required FilesScope view,
+    String? parentId,
+    int page = 1,
+  }) async => const Success(FoldersPage(folders: []));
+
+  @override
+  Future<Result<WorkspaceFile>> uploadFile(XFile file) async =>
+      Success(WorkspaceFile(id: file.name, name: file.name));
+
+  @override
+  Future<Result<void>> createFolder({
+    required String name,
+    required String orgId,
+    String? parentId,
+  }) async => const Success(null);
+}
+
 class _UploadRepository implements FilesRepository {
   final uploaded = <String>[];
+  ApiFailure? folderError;
 
   @override
   Future<Result<WorkspaceFile>> uploadFile(XFile file) async {
@@ -148,5 +296,54 @@ class _UploadRepository implements FilesRepository {
     required String name,
     required String orgId,
     String? parentId,
+  }) async => folderError == null ? const Success(null) : Failure(folderError!);
+
+  @override
+  Future<Result<void>> downloadFile({
+    required WorkspaceFile file,
+    required String savePath,
+    void Function(double? progress)? onProgress,
   }) async => const Success(null);
+
+  @override
+  Future<Result<void>> deleteFile(
+    String fileId, {
+    bool permanent = false,
+  }) async => const Success(null);
+
+  @override
+  Future<Result<void>> renameFile(String fileId, String name) async =>
+      const Success(null);
+
+  @override
+  Future<Result<void>> moveFile(String fileId, String folderId) async =>
+      const Success(null);
+
+  @override
+  Future<Result<FileShareResult>> shareFile({
+    required String fileId,
+    required List<String> recipientIds,
+    required FileSharePermission permission,
+    required FileShareAccess access,
+    String note = '',
+  }) async => const Success(FileShareResult());
+
+  @override
+  Future<Result<Uint8List>> fetchFilePreview(
+    WorkspaceFile file,
+    FilePreviewKind kind,
+  ) async => Success(Uint8List(0));
+
+  @override
+  Future<Result<WorkspaceFile>> fetchFileDetails(String fileId) async =>
+      Success(WorkspaceFile(id: fileId, name: fileId));
+
+  @override
+  Future<Result<Set<String>>> fetchPinnedFileIds() async => const Success({});
+
+  @override
+  Future<Result<void>> pinFile(String fileId) async => const Success(null);
+
+  @override
+  Future<Result<void>> unpinFile(String fileId) async => const Success(null);
 }

@@ -55,6 +55,7 @@ class PersonalProfilePanel extends ConsumerWidget {
                 ),
                 const Spacer(),
                 IconButton(
+                  tooltip: 'Close',
                   onPressed: () {
                     ref.read(personalProfilePanelProvider.notifier).state =
                         false;

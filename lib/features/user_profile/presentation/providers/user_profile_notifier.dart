@@ -11,6 +11,11 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
   /// (switching A to B and back to A).
   int _loadCounter = 0;
 
+  /// The workspace whose organisation and notification data the state holds,
+  /// and whether any load has filled it yet.
+  String? _loadedOrgId;
+  bool _hasLoaded = false;
+
   @override
   UserProfileState build() {
     _repository = ref.read(userProfileRepositoryProvider);
@@ -118,6 +123,10 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
           isSaving: false,
           successMessage: 'Account deleted successfully.',
         );
+        // The account no longer exists, so end the session too: clear the
+        // token and return to the login screen instead of staying signed in.
+        if (!ref.mounted) return;
+        await ref.read(authNotifierProvider.notifier).logout();
       case Failure<void>():
         state = state.copyWith(
           isSaving: false,
@@ -137,10 +146,19 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
       clearError: true,
       clearSuccess: true,
     );
+    final orgId = ref.read(workspaceProvider).selectedWorkspace?.id;
     final result = await _repository.updateNotificationPreferences(
-      orgId: ref.read(workspaceProvider).selectedWorkspace?.id,
+      orgId: orgId,
       preferences: preferences,
     );
+    // The user may have switched workspace while the save was in flight. Its
+    // answer belongs to the old workspace, so it must not replace what the new
+    // workspace shows or announce a save for it.
+    if (!ref.mounted) return;
+    if (ref.read(workspaceProvider).selectedWorkspace?.id != orgId) {
+      state = state.copyWith(isSaving: false);
+      return;
+    }
     switch (result) {
       case Success<NotificationPreferences>():
         state = state.copyWith(
@@ -148,6 +166,8 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
           isSaving: false,
           successMessage: 'Notification preferences saved successfully.',
         );
+        // Desktop pop-ups read their own copy; refresh it to the saved values.
+        ref.invalidate(desktopNotificationPreferencesProvider);
       case Failure<NotificationPreferences>():
         state = state.copyWith(
           isSaving: false,
@@ -251,7 +271,7 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
                 name: result.value.name,
                 avatar: '',
                 unreadCount: 0,
-                channelsCount: 0,
+                membersCount: 0,
               ),
             );
       case Failure<OrganizationProfile>():
@@ -415,18 +435,16 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchRegisteredUsers() async {
-    try {
-      final api = locator<ApiBaseService>();
-      final response = await api.get<Map<String, dynamic>>(path: '/users');
-      final data = response.data['data'] as List<dynamic>?;
-      if (data != null) {
-        return data.cast<Map<String, dynamic>>();
-      }
-    } catch (e) {
-      // ignore
-    }
-    return [];
+  /// Members of the selected organisation, for people pickers. Unlike
+  /// `GET /users`, this never includes accounts from other organisations.
+  Future<List<TeamMember>> fetchOrganisationMembers() async {
+    final orgId = ref.read(workspaceProvider).selectedWorkspace?.id;
+    if (orgId == null) return const [];
+    final result = await _repository.getTeamMembers(orgId: orgId);
+    return switch (result) {
+      Success<List<TeamMember>>() => result.value,
+      Failure<List<TeamMember>>() => const [],
+    };
   }
 
   Future<void> inviteMember({
@@ -618,8 +636,10 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
 
     var loadedTeamMembers = _valueOrNull(teamResult) ?? const [];
 
-    // Load persisted mock members if they exist
-    if (orgId != null) {
+    // Persisted mock members belong to mock mode only: outside it the API list
+    // is the truth, and a key left behind by an earlier mock run would replace
+    // the real team members every time the profile loads.
+    if (orgId != null && locator<AppConfig>().usesMockData) {
       final storage = locator<SecureStorageService>();
       final data = await storage.readData('mock_team_members_$orgId');
       if (data != null) {
@@ -649,16 +669,28 @@ class UserProfileNotifier extends Notifier<UserProfileState> {
     // start, so check again right before writing the state.
     if (_isObsoleteLoad(loadId, orgId)) return;
 
+    // copyWith keeps the old value for a null, which is right for a retry on
+    // the same workspace. After switching workspace the old organisation and
+    // notification choices belong to another workspace, so a failed load must
+    // clear them instead of showing (and later saving) them under this one.
+    final switchedWorkspace = !_hasLoaded || _loadedOrgId != orgId;
+    final notifications = _valueOrNull(notificationResult);
+    final organization = _valueOrNull(organizationResult);
+    _loadedOrgId = orgId;
+    _hasLoaded = true;
+
     state = state.copyWith(
       account: _valueOrNull(accountResult),
-      notifications: _valueOrNull(notificationResult),
+      notifications: notifications,
       securitySessions: _valueOrNull(securityResult) ?? const [],
-      organization: _valueOrNull(organizationResult),
+      organization: organization,
       teamMembers: loadedTeamMembers,
       rolesAndPermissions: _valueOrNull(rolesResult) ?? const [],
       billing: _valueOrNull(billingResult),
       isLoading: false,
       error: error,
+      clearNotifications: switchedWorkspace && notifications == null,
+      clearOrganization: switchedWorkspace && organization == null,
     );
   }
 

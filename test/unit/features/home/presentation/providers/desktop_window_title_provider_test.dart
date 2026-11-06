@@ -99,7 +99,7 @@ void main() {
                   id: 'ws-1',
                   name: 'Zedu Workspace',
                   avatar: '',
-                  channelsCount: 5,
+                  membersCount: 5,
                 ),
               ),
             ),
@@ -135,7 +135,7 @@ void main() {
                   id: 'ws-1',
                   name: 'Zedu Workspace',
                   avatar: '',
-                  channelsCount: 5,
+                  membersCount: 5,
                 ),
               ),
             ),
@@ -165,6 +165,70 @@ void main() {
 
       final title = container.read(desktopWindowTitleProvider);
       expect(title, 'Ada Okafor · Zedu');
+    });
+
+    ProviderContainer groupContainer(
+      ActiveChatState activeChat,
+      List<GroupDM> groups,
+    ) {
+      final container = ProviderContainer(
+        overrides: [
+          authNotifierProvider.overrideWith(
+            () => _FakeAuthNotifier(
+              const AuthState(status: AuthStatus.authenticated),
+            ),
+          ),
+          workspaceProvider.overrideWith(
+            () => _FakeWorkspaceNotifier(
+              const WorkspaceState(
+                selectedWorkspace: Workspace(
+                  id: 'ws-1',
+                  name: 'Zedu Workspace',
+                  avatar: '',
+                  channelsCount: 5,
+                ),
+              ),
+            ),
+          ),
+          activeChatProvider.overrideWith(
+            () => _FakeActiveChatNotifier(activeChat),
+          ),
+          groupDmProvider.overrideWith(() => _FakeGroupDmNotifier(groups)),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('names the open group chat instead of "Group Chat" (#2750)', () {
+      final container = groupContainer(
+        const ActiveChatState(type: ActiveChatType.groupDm, id: 'g-1'),
+        const [GroupDM(id: 'g-1', name: 'Design Crew', members: [])],
+      );
+
+      expect(container.read(desktopWindowTitleProvider), 'Design Crew · Zedu');
+    });
+
+    test('counts unread messages in group chats that are not open', () {
+      final container = groupContainer(
+        const ActiveChatState(type: ActiveChatType.channel, id: 'general'),
+        const [
+          GroupDM(id: 'g-1', name: 'Design Crew', members: [], unreadCount: 4),
+        ],
+      );
+
+      expect(container.read(desktopWindowTitleProvider), '(4) General · Zedu');
+    });
+
+    test('leaves the open group chat out of the unread count', () {
+      final container = groupContainer(
+        const ActiveChatState(type: ActiveChatType.groupDm, id: 'g-1'),
+        const [
+          GroupDM(id: 'g-1', name: 'Design Crew', members: [], unreadCount: 2),
+        ],
+      );
+
+      expect(container.read(desktopWindowTitleProvider), 'Design Crew · Zedu');
     });
   });
 }
@@ -199,4 +263,12 @@ class _FakeSelectedDmNotifier extends SelectedDmNotifier {
 
   @override
   DmConversation? build() => _initial;
+}
+
+class _FakeGroupDmNotifier extends GroupDmNotifier {
+  final List<GroupDM> _initial;
+  _FakeGroupDmNotifier(this._initial);
+
+  @override
+  List<GroupDM> build() => _initial;
 }

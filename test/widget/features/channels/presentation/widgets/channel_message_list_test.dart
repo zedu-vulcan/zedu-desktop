@@ -4,7 +4,8 @@ import 'package:zedu/features/features.dart';
 
 class MockChannelRepository extends Mock implements ChannelRepository {}
 
-class FakeChatHistoryNotifier extends ChangeNotifier implements ChatHistoryNotifier {
+class FakeChatHistoryNotifier extends ChangeNotifier
+    implements ChatHistoryNotifier {
   FakeChatHistoryNotifier(this.channelId);
 
   @override
@@ -144,7 +145,7 @@ void main() {
           'channel_id': 'ch-1',
           'status': 'sending',
           'created_at': DateTime.now().toIso8601String(),
-        }
+        },
       ];
 
       await pumpList(tester, const Success(<ChannelMessage>[]));
@@ -164,7 +165,7 @@ void main() {
           'channel_id': 'ch-1',
           'status': 'failed',
           'created_at': DateTime.now().toIso8601String(),
-        }
+        },
       ];
 
       await pumpList(tester, const Success(<ChannelMessage>[]));
@@ -176,4 +177,91 @@ void main() {
       expect(fakeChatHistory.retriedMessageId, 'failed-msg-1');
     },
   );
+
+  group('day dividers', () {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day, 0, 1);
+    final yesterday = DateTime(now.year, now.month, now.day - 1, 12);
+    final older = DateTime(now.year, now.month, now.day - 10, 9);
+
+    testWidgets('one divider above the first message of each day', (
+      tester,
+    ) async {
+      await pumpList(
+        tester,
+        Success([
+          ChannelMessage(senderName: 'Ada', text: 'today', createdAt: today),
+          ChannelMessage(
+            senderName: 'Ada',
+            text: 'yesterday late',
+            createdAt: yesterday.add(const Duration(hours: 2)),
+          ),
+          ChannelMessage(
+            senderName: 'Ada',
+            text: 'yesterday',
+            createdAt: yesterday,
+          ),
+          ChannelMessage(
+            senderName: 'Ada',
+            text: 'old later',
+            createdAt: older.add(const Duration(hours: 5)),
+          ),
+          ChannelMessage(senderName: 'Ada', text: 'old', createdAt: older),
+        ]),
+      );
+
+      expect(find.byType(ChannelDayDivider), findsNWidgets(3));
+      final olderLabel = channelDayLabel(older);
+      double top(String text) => tester.getTopLeft(find.text(text)).dy;
+      for (final (label, first, last) in [
+        (olderLabel, 'old', 'old later'),
+        ('Yesterday', 'yesterday', 'yesterday late'),
+        ('Today', 'today', 'today'),
+      ]) {
+        expect(find.text(label), findsOneWidget);
+        expect(top(label), lessThan(top(first)));
+        expect(top(label), lessThanOrEqualTo(top(last)));
+      }
+      expect(top(olderLabel), lessThan(top('Yesterday')));
+      expect(top('old later'), lessThan(top('Yesterday')));
+      expect(top('Yesterday'), lessThan(top('Today')));
+    });
+
+    testWidgets('no divider for messages without a time', (tester) async {
+      await pumpList(
+        tester,
+        const Success([ChannelMessage(senderName: 'Ada', text: 'undated')]),
+      );
+
+      expect(find.byType(ChannelDayDivider), findsNothing);
+    });
+  });
+
+  group('channelDayLabel', () {
+    final now = DateTime(2026, 11, 4, 9); // A Wednesday.
+
+    test('today and yesterday by calendar day, not 24 hours', () {
+      expect(channelDayLabel(DateTime(2026, 11, 4, 0, 1), now: now), 'Today');
+      expect(
+        channelDayLabel(DateTime(2026, 11, 3, 23, 59), now: now),
+        'Yesterday',
+      );
+    });
+
+    test('the weekday within the last week', () {
+      expect(channelDayLabel(DateTime(2026, 11, 2), now: now), 'Monday');
+      expect(channelDayLabel(DateTime(2026, 10, 29), now: now), 'Thursday');
+    });
+
+    test('the date from a week ago, with the year only when not this year', () {
+      expect(
+        channelDayLabel(DateTime(2026, 10, 28), now: now),
+        'Wednesday, Oct 28',
+      );
+      expect(
+        channelDayLabel(DateTime(2025, 12, 31), now: now),
+        'Wednesday, Dec 31, 2025',
+      );
+    });
+  });
 }

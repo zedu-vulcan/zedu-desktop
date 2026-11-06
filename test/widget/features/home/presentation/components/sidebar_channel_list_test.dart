@@ -2,15 +2,20 @@ import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 import '../../../../../helpers/helpers.dart';
 
-Channel _channel(String name, {bool archived = false, String org = 'org-1'}) =>
-    Channel(
-      id: 'channel-$name',
-      name: name,
-      description: '',
-      organisationId: org,
-      ownerId: 'user-1',
-      archived: archived,
-    );
+Channel _channel(
+  String name, {
+  bool archived = false,
+  bool hasAccess = true,
+  String org = 'org-1',
+}) => Channel(
+  id: 'channel-$name',
+  name: name,
+  description: '',
+  organisationId: org,
+  ownerId: 'user-1',
+  archived: archived,
+  hasAccess: hasAccess,
+);
 
 class FakeChannelNotifier extends ChannelNotifier {
   @override
@@ -18,6 +23,7 @@ class FakeChannelNotifier extends ChannelNotifier {
     _channel('general'),
     _channel('random'),
     _channel('old', archived: true),
+    _channel('left-channel', hasAccess: false),
   ];
 }
 
@@ -89,6 +95,7 @@ void main() {
       expect(find.text('general'), findsOneWidget);
       expect(find.text('random'), findsOneWidget);
       expect(find.text('old'), findsNothing);
+      expect(find.text('left-channel'), findsNothing);
     });
 
     group('after a workspace switch', () {
@@ -173,7 +180,11 @@ void main() {
 
       expect(
         container.read(activeChatProvider),
-        const ActiveChatState(type: ActiveChatType.channel, id: 'random'),
+        const ActiveChatState(
+          type: ActiveChatType.channel,
+          id: 'random',
+          channelId: 'channel-random',
+        ),
       );
     });
   });

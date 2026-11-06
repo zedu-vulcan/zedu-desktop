@@ -99,6 +99,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
   bool _saving = false;
   String? _saveError;
+  bool _confirmingDiscard = false;
 
   @override
   void initState() {
@@ -129,12 +130,69 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     super.dispose();
   }
 
+  /// Whether the form differs from what was loaded, so leaving now would
+  /// drop edits. Comparisons ignore surrounding whitespace and use the same
+  /// normalised values the save would send.
+  bool get _isDirty {
+    final account = widget.account;
+    String norm(String value) => value.trim();
+    return norm(nameCtrl.text) != norm(account.name) ||
+        norm(displayNameCtrl.text) != norm(account.displayName) ||
+        norm(usernameCtrl.text) != norm(account.username) ||
+        norm(emailCtrl.text) != norm(account.email) ||
+        norm(phoneCtrl.text) != norm(account.phoneNumber) ||
+        norm(titleCtrl.text) != norm(account.title) ||
+        norm(pronunciationCtrl.text) != norm(account.namePronunciation) ||
+        selectedTimezone != normalizeProfileTimezone(account.timezone) ||
+        _canonicalCountryName(selectedCountry) !=
+            _canonicalCountryName(account.country);
+  }
+
+  /// Closes the editor. The header close button, Cancel, a scrim tap and the
+  /// system back gesture all come through here, so an edited form asks before
+  /// discarding while an unchanged one closes straight away.
+  Future<void> _maybeClose() async {
+    if (!mounted) return;
+    // While a save is running it owns the dialog and pops it when it ends.
+    if (_saving || !_isDirty) {
+      Navigator.pop(context);
+      return;
+    }
+    if (_confirmingDiscard) return;
+    _confirmingDiscard = true;
+    try {
+      await showProfileConfirmDialog(
+        context,
+        title: 'Discard changes?',
+        message:
+            'Your edits to your profile have not been saved. Discard them?',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: () async {
+          if (mounted) Navigator.pop(context);
+        },
+      );
+    } finally {
+      _confirmingDiscard = false;
+    }
+  }
+
   Future<void> _save() async {
     if (_saving || !(formKey.currentState?.validate() ?? false)) return;
     setState(() {
       _saving = true;
       _saveError = null;
     });
+
+    final canonicalCountry = _canonicalCountryName(selectedCountry);
+    if (selectedCountry.isNotEmpty && !kCountries.contains(canonicalCountry)) {
+      setState(() {
+        _saving = false;
+        _saveError = 'Select a country from the list';
+      });
+      return;
+    }
+
     final error = await widget.onSave(
       widget.account.copyWith(
         name: nameCtrl.text.trim(),
@@ -145,7 +203,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         title: titleCtrl.text.trim(),
         namePronunciation: pronunciationCtrl.text.trim(),
         timezone: selectedTimezone,
-        country: _canonicalCountryName(selectedCountry),
+        country: canonicalCountry,
       ),
     );
     // Closed with Cancel while saving: nothing left to update or pop.
@@ -164,7 +222,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   Widget build(BuildContext context) {
     final colors = context.colors;
 
-    return Dialog(
+    final dialog = Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: 640,
@@ -190,7 +248,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   ),
                   IconButton(
                     tooltip: 'Close',
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _maybeClose,
                     icon: Icon(Icons.close, color: colors.textHint),
                   ),
                 ],
@@ -242,6 +300,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                               label: 'Username',
                               controller: usernameCtrl,
                               hint: 'Enter username',
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Username is required';
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 16),
                             AppTextField(
@@ -366,8 +430,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                                     return TextFormField(
                                       controller: controller,
                                       focusNode: focusNode,
-                                      onChanged: (value) => selectedCountry =
-                                          _canonicalCountryName(value),
+                                      onChanged: (value) => setState(() {
+                                        selectedCountry = value;
+                                      }),
                                       validator: (value) {
                                         final country = _canonicalCountryName(
                                           value ?? '',
@@ -413,37 +478,45 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                                           onFieldSubmitted(),
                                     );
                                   },
-                              optionsViewBuilder:
-                                  (context, onSelected, options) {
-                                    return Align(
-                                      alignment: Alignment.topLeft,
-                                      child: Material(
-                                        elevation: 4,
+                              optionsViewBuilder: (context, onSelected, options) {
+                                return Align(
+                                  alignment: Alignment.topLeft,
+                                  child: Material(
+                                    elevation: 4,
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 360,
+                                      constraints: const BoxConstraints(
+                                        maxHeight: 240,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: colors.background,
                                         borderRadius: BorderRadius.circular(8),
-                                        child: Container(
-                                          width: 360,
-                                          constraints: const BoxConstraints(
-                                            maxHeight: 240,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: colors.background,
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: colors.divider,
-                                            ),
-                                          ),
-                                          child: ListView.builder(
-                                            padding: EdgeInsets.zero,
-                                            shrinkWrap: true,
-                                            itemCount: options.length,
-                                            itemBuilder: (context, index) {
-                                              final option = options.elementAt(
-                                                index,
-                                              );
-                                              return InkWell(
-                                                onTap: () => onSelected(option),
+                                        border: Border.all(
+                                          color: colors.divider,
+                                        ),
+                                      ),
+                                      child: ListView.builder(
+                                        padding: EdgeInsets.zero,
+                                        shrinkWrap: true,
+                                        itemCount: options.length,
+                                        itemBuilder: (context, index) {
+                                          final option = options.elementAt(
+                                            index,
+                                          );
+                                          final isHighlighted =
+                                              AutocompleteHighlightedOption.of(
+                                                context,
+                                              ) ==
+                                              index;
+                                          return Semantics(
+                                            selected: isHighlighted,
+                                            child: InkWell(
+                                              onTap: () => onSelected(option),
+                                              child: ColoredBox(
+                                                color: isHighlighted
+                                                    ? colors.primaryBg
+                                                    : Colors.transparent,
                                                 child: Padding(
                                                   padding:
                                                       const EdgeInsets.symmetric(
@@ -454,16 +527,24 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                                                     option,
                                                     style: context
                                                         .textTheme
-                                                        .bodySmall,
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color: isHighlighted
+                                                              ? colors.primary
+                                                              : colors
+                                                                    .textPrimary,
+                                                        ),
                                                   ),
                                                 ),
-                                              );
-                                            },
-                                          ),
-                                        ),
+                                              ),
+                                            ),
+                                          );
+                                        },
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                             const SizedBox(height: 16),
                           ],
@@ -560,7 +641,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                       ),
                     ),
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _maybeClose,
                     child: Text(
                       'Cancel',
                       style: TextStyle(color: colors.textPrimary),
@@ -580,6 +661,16 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
           ],
         ),
       ),
+    );
+
+    // A scrim tap, Escape and the system back gesture arrive as a route pop
+    // rather than a button press, so the dirty check intercepts them here.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _maybeClose();
+      },
+      child: dialog,
     );
   }
 }

@@ -49,7 +49,7 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: TextField(
             controller: _searchController,
-            onChanged: (val) => setState(() => _searchQuery = val),
+            onChanged: (val) => setState(() => _searchQuery = val.trim()),
             decoration: InputDecoration(
               hintText: 'Search channels',
               prefixIcon: Icon(Icons.search, color: colors.textHint),
@@ -156,16 +156,59 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
                               ),
                             )
                           : null,
-                      trailing: Text(
-                        channel.membersCount.countLabel('member'),
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colors.textSecondary,
-                        ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            channel.membersCount.countLabel('member'),
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                          ),
+                          if (!channel.hasAccess &&
+                              !channel.archived &&
+                              !channel.isPrivate) ...[
+                            const SizedBox(width: 12),
+                            OutlinedButton(
+                              onPressed: () async {
+                                final result = await ref
+                                    .read(channelProvider.notifier)
+                                    .joinChannel(channel.id);
+                                if (result is Success<void> &&
+                                    context.mounted) {
+                                  ref
+                                      .read(activeChatProvider.notifier)
+                                      .selectChannel(
+                                        channel.name,
+                                        channelId: channel.id,
+                                      );
+                                }
+                              },
+                              child: const Text('Join'),
+                            ),
+                          ],
+                        ],
                       ),
-                      onTap: () {
+                      onTap: () async {
+                        if (!channel.hasAccess &&
+                            !channel.archived &&
+                            !channel.isPrivate) {
+                          final result = await ref
+                              .read(channelProvider.notifier)
+                              .joinChannel(channel.id);
+                          if (result is Success<void> && context.mounted) {
+                            ref
+                                .read(activeChatProvider.notifier)
+                                .selectChannel(
+                                  channel.name,
+                                  channelId: channel.id,
+                                );
+                          }
+                          return;
+                        }
                         ref
                             .read(activeChatProvider.notifier)
-                            .selectChannel(channel.name);
+                            .selectChannel(channel.name, channelId: channel.id);
                       },
                     );
                   },

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -74,13 +75,16 @@ void main() {
   }
 
   Future<void> attachFile(WidgetTester tester) async {
-    await composerKey.currentState!.addFiles([
-      XFile.fromData(
-        Uint8List.fromList([1, 2, 3]),
-        path: 'sample.txt',
-        mimeType: 'text/plain',
-      ),
-    ]);
+    // addFiles checks the file on disk, which needs real async in a widget test.
+    await tester.runAsync(() async {
+      final dir = await Directory.systemTemp.createTemp('send_icon_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}${Platform.pathSeparator}sample.txt');
+      await file.writeAsBytes([1, 2, 3]);
+      await composerKey.currentState!.addFiles([
+        XFile(file.path, mimeType: 'text/plain'),
+      ]);
+    });
     await tester.pump();
   }
 
@@ -183,6 +187,8 @@ void main() {
   composerTest('completed voice note activates the icon until removed', (
     tester,
   ) async {
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pump();
     await tester.tap(find.byTooltip('Voice message'));
     await tester.pumpAndSettle();
     expect(find.text('Recording...'), findsOneWidget);
@@ -194,6 +200,41 @@ void main() {
     await tester.tap(find.byIcon(Icons.close_rounded));
     await tester.pumpAndSettle();
     expectActive(tester, false);
+  });
+
+  GestureDetector sendControl(WidgetTester tester) {
+    // The send affordance is the GestureDetector directly wrapping the icon.
+    // (The surrounding Tooltip adds its own internal detector further up.)
+    final match = find.byWidgetPredicate(
+      (widget) =>
+          widget is GestureDetector &&
+          widget.child is Icon &&
+          (widget.child as Icon).icon == Icons.send_rounded,
+    );
+    expect(match, findsOneWidget);
+    return tester.widget<GestureDetector>(match);
+  }
+
+  composerTest('send control is disabled when empty, enabled with text', (
+    tester,
+  ) async {
+    expect(find.byTooltip('Send message'), findsOneWidget);
+    expect(sendControl(tester).onTap, isNull);
+    await tester.enterText(find.byType(TextField), 'Hello');
+    await tester.pump();
+    expectActive(tester, true);
+    expect(sendControl(tester).onTap, isNotNull);
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.pump();
+    expectActive(tester, false);
+    expect(sendControl(tester).onTap, isNull);
+  });
+
+  composerTest('tapping the disabled send does not send', (tester) async {
+    expect(sendControl(tester).onTap, isNull);
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pump();
+    verifyNever(() => history.sendMessage(any(), media: any(named: 'media')));
   });
 
   composerTest('attachments do not activate an empty edit', (tester) async {

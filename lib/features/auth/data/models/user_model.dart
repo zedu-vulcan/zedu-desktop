@@ -76,17 +76,23 @@ class UserModel {
     );
   }
 
-  /// Accepts epoch seconds (as a number or a string) and ISO-8601 strings.
+  /// Accepts epoch seconds/millis (as a number or a string) and ISO-8601 strings.
   static DateTime _parseDate(Object? raw) {
     if (raw is num) {
-      return DateTime.fromMillisecondsSinceEpoch(raw.toInt() * 1000);
+      final val = raw.toInt();
+      return val > 100000000000
+          ? DateTime.fromMillisecondsSinceEpoch(val)
+          : DateTime.fromMillisecondsSinceEpoch(val * 1000);
     }
     if (raw is String) {
-      final seconds = int.tryParse(raw);
+      final trimmed = raw.trim();
+      final seconds = int.tryParse(trimmed);
       if (seconds != null) {
-        return DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+        return seconds > 100000000000
+            ? DateTime.fromMillisecondsSinceEpoch(seconds)
+            : DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
       }
-      final iso = DateTime.tryParse(raw);
+      final iso = DateTime.tryParse(trimmed);
       if (iso != null) return iso;
     }
     return DateTime.fromMillisecondsSinceEpoch(0);

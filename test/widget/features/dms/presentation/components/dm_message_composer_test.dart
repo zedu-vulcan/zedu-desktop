@@ -17,6 +17,27 @@ class FakeSecureStorageService extends Fake implements SecureStorageService {
   Future<void> deleteValue(String key) async => _values.remove(key);
 }
 
+class _VirtualAttachment extends Fake implements XFile {
+  @override
+  String get path => 'virtual-attachment.txt';
+
+  @override
+  String get name => 'virtual-attachment.txt';
+
+  @override
+  Future<int> length() async => 4;
+}
+
+class _ComposerFiles extends ComposerFileStore {
+  final inspected = <String>[];
+
+  @override
+  Future<Result<bool>> exists(String path) async {
+    inspected.add(path);
+    return const Success(true);
+  }
+}
+
 Future<TextField> pumpComposer(WidgetTester tester) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -64,6 +85,9 @@ void composerTest(
 }
 
 Future<void> tapDivider(WidgetTester tester) async {
+  // Divider lives in the plus menu with the other less-used actions.
+  await tester.tap(find.byTooltip('More actions'));
+  await tester.pump();
   await tester.tap(find.byTooltip('Divider'));
   // Let the composer's debounced draft save run.
   await tester.pump(const Duration(milliseconds: 300));
@@ -119,6 +143,39 @@ Future<void> pressShortcut(
 }
 
 void main() {
+  testWidgets('attachment checks go through the file store without disk I/O', (
+    tester,
+  ) async {
+    final files = _ComposerFiles();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          composerFileStoreProvider.overrideWithValue(files),
+          dmDraftStoreProvider.overrideWith(
+            (ref) => DmDraftStore(
+              FakeSecureStorageService(),
+              userId: 'user-1',
+              orgId: 'org-1',
+            ),
+          ),
+        ],
+        child: buildTestMaterialApp(
+          const Scaffold(
+            body: DmMessageComposer(recipientName: 'Ada', channelId: 'dm-1'),
+          ),
+        ),
+      ),
+    );
+    await tester
+        .state<DmMessageComposerState>(find.byType(DmMessageComposer))
+        .addFiles([_VirtualAttachment()]);
+    await tester.pump();
+
+    expect(files.inspected, ['virtual-attachment.txt']);
+    expect(find.text('virtual-attachment.txt'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   group('DmMessageComposer block quotes', () {
     const cases = [
       (
@@ -169,11 +226,39 @@ void main() {
         cursor: null,
       ),
       (
-        name: 'inserts a quote prefix at the cursor without selecting text',
+        name: 'prefixes the line when the cursor is in the middle of it',
         text: 'before after',
         selection: TextSelection.collapsed(offset: 7),
-        expected: 'before > after',
+        expected: '> before after',
         cursor: 9,
+      ),
+      (
+        name: 'prefixes the line when the cursor is at the end of it',
+        text: 'hello world',
+        selection: TextSelection.collapsed(offset: 11),
+        expected: '> hello world',
+        cursor: 13,
+      ),
+      (
+        name: 'prefixes only the cursor line of a multiline message',
+        text: 'one\ntwo three\nfour',
+        selection: TextSelection.collapsed(offset: 8),
+        expected: 'one\n> two three\nfour',
+        cursor: 10,
+      ),
+      (
+        name: 'prefixes an empty line when the cursor is right after a newline',
+        text: 'one\n',
+        selection: TextSelection.collapsed(offset: 4),
+        expected: 'one\n> ',
+        cursor: 6,
+      ),
+      (
+        name: 'prefixes the first line when the cursor is at the very start',
+        text: 'hello',
+        selection: TextSelection.collapsed(offset: 0),
+        expected: '> hello',
+        cursor: 2,
       ),
       (
         name: 'inserts a quote prefix into an empty composer',
@@ -326,6 +411,134 @@ void main() {
     });
   });
 
+  group('DmMessageComposer turning a format off', () {
+    /// Types [typed] at the caret, as the keyboard would.
+    Future<void> typeAtCaret(WidgetTester tester, String typed) async {
+      final controller = composerController(tester);
+      final caret = controller.selection.start;
+      final text = controller.text;
+      controller.value = TextEditingValue(
+        text: text.substring(0, caret) + typed + text.substring(caret),
+        selection: TextSelection.collapsed(offset: caret + typed.length),
+      );
+      await tester.pump();
+    }
+
+    Future<void> tapFormat(WidgetTester tester, String tooltip) async {
+      await tester.tap(find.byTooltip(tooltip));
+      await tester.pump();
+    }
+
+    const formats = [
+      (tooltip: 'Bold (Ctrl+B)', marker: '**'),
+      (tooltip: 'Italic (Ctrl+I)', marker: '*'),
+      (tooltip: 'Strikethrough', marker: '~~'),
+      (tooltip: 'Inline code', marker: '`'),
+    ];
+
+    for (final format in formats) {
+      final m = format.marker;
+
+      testWidgets('${format.tooltip}: a second click ends the run', (
+        tester,
+      ) async {
+        await tester.pumpWidget(buildComposerUnderTest());
+        await typeAndSelect(
+          tester,
+          '',
+          selection: const TextSelection.collapsed(offset: 0),
+        );
+
+        await tapFormat(tester, format.tooltip);
+        await typeAtCaret(tester, 'word');
+        await tapFormat(tester, format.tooltip);
+        await typeAtCaret(tester, ' plain');
+
+        final controller = composerController(tester);
+        expect(controller.text, '${m}word$m plain');
+        expect(
+          controller.selection,
+          TextSelection.collapsed(offset: '${m}word$m plain'.length),
+        );
+        controller.clear();
+        await tester.pump(const Duration(milliseconds: 300));
+      });
+
+      testWidgets('${format.tooltip}: two clicks in a row leave no markers', (
+        tester,
+      ) async {
+        await tester.pumpWidget(buildComposerUnderTest());
+        await typeAndSelect(
+          tester,
+          'hi ',
+          selection: const TextSelection.collapsed(offset: 3),
+        );
+
+        await tapFormat(tester, format.tooltip);
+        await tapFormat(tester, format.tooltip);
+
+        final controller = composerController(tester);
+        expect(controller.text, 'hi ');
+        expect(controller.selection, const TextSelection.collapsed(offset: 3));
+        controller.clear();
+        await tester.pump(const Duration(milliseconds: 300));
+      });
+    }
+
+    testWidgets('closes a run that has no closing marker yet', (tester) async {
+      await tester.pumpWidget(buildComposerUnderTest());
+      await typeAndSelect(
+        tester,
+        '**bold',
+        selection: const TextSelection.collapsed(offset: 6),
+      );
+
+      await tapFormat(tester, 'Bold (Ctrl+B)');
+      await typeAtCaret(tester, ' plain');
+
+      final controller = composerController(tester);
+      expect(controller.text, '**bold** plain');
+      controller.clear();
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    testWidgets('Italic inside a bold run still starts an italic pair', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildComposerUnderTest());
+      await typeAndSelect(
+        tester,
+        '**bold**',
+        selection: const TextSelection.collapsed(offset: 6),
+      );
+
+      await tapFormat(tester, 'Italic (Ctrl+I)');
+
+      final controller = composerController(tester);
+      expect(controller.text, '**bold****');
+      expect(controller.selection, const TextSelection.collapsed(offset: 7));
+      controller.clear();
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    testWidgets('Ctrl+B also ends the bold run', (tester) async {
+      await tester.pumpWidget(buildComposerUnderTest());
+      await typeAndSelect(
+        tester,
+        '**bold**',
+        selection: const TextSelection.collapsed(offset: 6),
+      );
+
+      await pressShortcut(tester, LogicalKeyboardKey.keyB);
+
+      final controller = composerController(tester);
+      expect(controller.text, '**bold**');
+      expect(controller.selection, const TextSelection.collapsed(offset: 8));
+      controller.clear();
+      await tester.pump(const Duration(milliseconds: 300));
+    });
+  });
+
   group('DmMessageComposer drafts with no channel yet', () {
     testWidgets('each person keeps their own draft', (tester) async {
       final draftKey = ValueNotifier('new-dm:ada');
@@ -372,4 +585,68 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
     });
   });
+
+  group('DmMessageComposer voice notes', () {
+    testWidgets('enables send when a voice note is recorded without text', (
+      tester,
+    ) async {
+      final recorder = _FakeAudioRecorder();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            dmDraftStoreProvider.overrideWith(
+              (ref) => DmDraftStore(
+                FakeSecureStorageService(),
+                userId: 'user-1',
+                orgId: 'org-1',
+              ),
+            ),
+          ],
+          child: buildTestMaterialApp(
+            Scaffold(
+              body: DmMessageComposer(
+                recipientName: 'Ada',
+                channelId: 'dm-1',
+                audioRecorder: recorder,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      Icon sendIcon() => tester.widget<Icon>(find.byIcon(Icons.send_rounded));
+
+      expect(
+        sendIcon().color,
+        AppPalette.light.textHint.withValues(alpha: 0.55),
+      );
+
+      await tester.tap(find.byTooltip('Voice message'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Stop recording').first);
+      await tester.pump();
+
+      expect(recorder.recordedPaths, hasLength(1));
+      expect(sendIcon().color, AppPalette.light.primary);
+    });
+  });
+}
+
+class _FakeAudioRecorder extends Fake implements AudioRecorder {
+  final recordedPaths = <String>[];
+
+  @override
+  Future<bool> hasPermission({bool request = true}) async => true;
+
+  @override
+  Future<void> start(RecordConfig config, {required String path}) async {
+    recordedPaths.add(path);
+  }
+
+  @override
+  Future<String?> stop() async =>
+      recordedPaths.isEmpty ? null : recordedPaths.last;
+
+  @override
+  Future<void> dispose() async {}
 }

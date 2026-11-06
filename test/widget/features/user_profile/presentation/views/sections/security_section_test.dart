@@ -1,3 +1,4 @@
+import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 import '../../../../../../helpers/helpers.dart';
@@ -12,7 +13,7 @@ Widget buildSecuritySection(List<SecuritySession> sessions) {
             ({
               required String currentPassword,
               required String newPassword,
-            }) async {},
+            }) async => const Success<void>(null),
       ),
     ),
   );
@@ -47,5 +48,25 @@ void main() {
     expect(find.byType(DataTable), findsOneWidget);
     expect(find.text('Chrome on Linux'), findsOneWidget);
     expect(find.text('No active sessions found'), findsNothing);
+  });
+
+  testWidgets('the sessions table header uses the background token', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildSecuritySection(const [
+        SecuritySession(
+          device: 'Chrome on Linux',
+          location: 'Lagos',
+          date: '4 Nov 2026',
+          lastActive: 'Now',
+          status: 'Active',
+        ),
+      ]),
+    );
+
+    final table = tester.widget<DataTable>(find.byType(DataTable));
+
+    expect(table.headingRowColor!.resolve({}), AppPalette.light.background);
   });
 }

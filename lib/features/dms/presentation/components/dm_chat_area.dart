@@ -1,8 +1,6 @@
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
-import 'composer/composer.dart';
-
 class DmChatArea extends ConsumerStatefulWidget {
   final DmConversation conversation;
 
@@ -14,6 +12,7 @@ class DmChatArea extends ConsumerStatefulWidget {
 
 class _DmChatAreaState extends ConsumerState<DmChatArea> {
   bool _isDragging = false;
+  bool _searchOpen = false;
   final _composerKey = GlobalKey<DmMessageComposerState>();
 
   String get _recipientHandle {
@@ -30,9 +29,7 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
 
   bool get _isOwnSpace {
     final userId = ref.read(authNotifierProvider).user?.id;
-    return userId != null &&
-        userId.isNotEmpty &&
-        widget.conversation.participantId == userId;
+    return widget.conversation.isOwnSpaceFor(userId);
   }
 
   bool _isOwnSpaceSystemEvent(Map<String, dynamic> message) {
@@ -80,23 +77,9 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
       case 'view_profile':
         await showDialog<void>(
           context: context,
-          builder: (context) => AlertDialog(
-            title: Text(conversation.displayName),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (conversation.participantEmail?.isNotEmpty == true)
-                  Text(conversation.participantEmail!),
-                Text('User ID: ${conversation.participantId}'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-            ],
+          builder: (context) => _ParticipantProfileDialog(
+            conversation: conversation,
+            handle: _recipientHandle,
           ),
         );
       case 'mute_notifications':
@@ -111,10 +94,14 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
         ref
             .read(dmConversationActionsProvider.notifier)
             .togglePinned(conversation.channelId);
+      case 'pinned_messages':
+        await _showPinnedMessages();
       case 'search_in_conversation':
         await _showConversationSearch();
       case 'view_files':
         await _showConversationFiles();
+      case 'export_transcript':
+        await _showExportTranscript();
       case 'clear_history':
         final confirmed = await _confirmConversationAction(
           title: 'Clear history?',
@@ -179,17 +166,52 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
         false;
   }
 
-  Future<void> _showConversationSearch() async {
+  Future<void> _showPinnedMessages() async {
     final history = ref.read(
       chatHistoryProvider(widget.conversation.channelId),
     );
+    final pinned = history.messages
+        .where(
+          (message) =>
+              message['is_pinned'] == true || message['pinned'] == true,
+        )
+        .toList();
     await showDialog<void>(
       context: context,
-      builder: (context) => _ConversationSearchDialog(
-        displayName: widget.conversation.displayName,
-        messages: history.messages,
+      builder: (context) => AlertDialog(
+        title: Text('${widget.conversation.displayName} pinned messages'),
+        content: SizedBox(
+          width: 420,
+          child: pinned.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('Pinned messages are not available yet'),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: pinned.length,
+                  itemBuilder: (context, index) {
+                    final msg = pinned[index];
+                    return ListTile(
+                      title: Text(msg['content']?.toString() ?? ''),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _showConversationSearch() async {
+    setState(() => _searchOpen = true);
   }
 
   Future<void> _showConversationFiles() async {
@@ -200,6 +222,19 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
       context: context,
       builder: (context) => ConversationFilesDialog(
         title: '${widget.conversation.displayName} files',
+        history: history,
+      ),
+    );
+  }
+
+  Future<void> _showExportTranscript() async {
+    final history = ref.read(
+      chatHistoryProvider(widget.conversation.channelId),
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (context) => ExportTranscriptDialog(
+        conversationName: widget.conversation.displayName,
         history: history,
       ),
     );
@@ -240,127 +275,152 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
         color: colors.onPrimary,
         child: Stack(
           children: [
-            Column(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _DmChatHeader(
-                  conversation: widget.conversation,
-                  isOwnSpace: _isOwnSpace,
-                  isMuted: isMuted,
-                  isPinned: isPinned,
-                  onMenuAction: _handleMenuAction,
-                ),
                 Expanded(
-                  child: Consumer(
-                    builder: (context, ref, child) {
-                      final historyState = ref.watch(
-                        chatHistoryProvider(widget.conversation.channelId),
-                      );
-                      final isOwnSpace = _isOwnSpace;
-                      final messages = isOwnSpace
-                          ? historyState.messages
-                                .where(
-                                  (message) => !_isOwnSpaceSystemEvent(message),
-                                )
-                                .toList()
-                          : historyState.messages;
-
-                      return NotificationListener<ScrollNotification>(
-                        onNotification: (ScrollNotification scrollInfo) {
-                          if (!historyState.isLoading &&
-                              historyState.hasMore &&
-                              !historyState.loadFailed &&
-                              !historyState.loadMoreFailed &&
-                              scrollInfo.metrics.pixels >=
-                                  scrollInfo.metrics.maxScrollExtent * 0.8) {
-                            ref
-                                .read(
-                                  chatHistoryProvider(
-                                    widget.conversation.channelId,
-                                  ),
-                                )
-                                .loadMore();
-                          }
-                          return false;
-                        },
-                        child: CustomScrollView(
-                          reverse: true,
-                          slivers: [
-                            SliverPadding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 16,
+                  child: Column(
+                    children: [
+                      _DmChatHeader(
+                        conversation: widget.conversation,
+                        isOwnSpace: _isOwnSpace,
+                        isMuted: isMuted,
+                        isPinned: isPinned,
+                        onMenuAction: _handleMenuAction,
+                      ),
+                      Expanded(
+                        child: Consumer(
+                          builder: (context, ref, child) {
+                            final historyState = ref.watch(
+                              chatHistoryProvider(
+                                widget.conversation.channelId,
                               ),
-                              sliver: SliverList(
-                                delegate: SliverChildBuilderDelegate((
-                                  context,
-                                  index,
-                                ) {
-                                  final msg = messages[index];
-                                  return _MessageBubble(
-                                    message: msg,
-                                    conversation: widget.conversation,
-                                    channelId: widget.conversation.channelId,
-                                    onEdit: (id, text) => _composerKey
-                                        .currentState
-                                        ?.enterEditMode(id, text),
-                                  );
-                                }, childCount: messages.length),
-                              ),
-                            ),
-                            if (historyState.isLoading)
-                              const SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 16),
-                                  child: Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                ),
-                              ),
-                            if (!historyState.isLoading &&
-                                historyState.loadFailed)
-                              SliverToBoxAdapter(
-                                child: _HistoryLoadError(
-                                  message: "Couldn't load messages.",
-                                  onRetry: historyState.retryLoad,
-                                ),
-                              )
-                            else if (!historyState.isLoading &&
-                                historyState.loadMoreFailed)
-                              SliverToBoxAdapter(
-                                child: _HistoryLoadError(
-                                  message: "Couldn't load older messages.",
-                                  onRetry: historyState.loadMore,
-                                ),
-                              ),
-                            if (!historyState.hasMore)
-                              SliverToBoxAdapter(
-                                child: historyState.historyCleared
-                                    ? const _HistoryClearedNote()
-                                    : isOwnSpace
-                                    ? OwnSpaceIntro(
-                                        conversation: widget.conversation,
-                                        onEditProfile: _editOwnProfile,
+                            );
+                            final isOwnSpace = _isOwnSpace;
+                            final messages = isOwnSpace
+                                ? historyState.messages
+                                      .where(
+                                        (message) =>
+                                            !_isOwnSpaceSystemEvent(message),
                                       )
-                                    : DmProfileCard(
-                                        conversation: widget.conversation,
-                                        onViewProfile: () =>
-                                            _handleMenuAction('view_profile'),
+                                      .toList()
+                                : historyState.messages;
+
+                            return NotificationListener<ScrollNotification>(
+                              onNotification: (ScrollNotification scrollInfo) {
+                                if (!historyState.isLoading &&
+                                    historyState.hasMore &&
+                                    !historyState.loadFailed &&
+                                    !historyState.loadMoreFailed &&
+                                    scrollInfo.metrics.pixels >=
+                                        scrollInfo.metrics.maxScrollExtent *
+                                            0.8) {
+                                  ref
+                                      .read(
+                                        chatHistoryProvider(
+                                          widget.conversation.channelId,
+                                        ),
+                                      )
+                                      .loadMore();
+                                }
+                                return false;
+                              },
+                              child: CustomScrollView(
+                                reverse: true,
+                                slivers: [
+                                  SliverPadding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 16,
+                                    ),
+                                    sliver: SliverList(
+                                      delegate: SliverChildBuilderDelegate((
+                                        context,
+                                        index,
+                                      ) {
+                                        final msg = messages[index];
+                                        return _MessageBubble(
+                                          message: msg,
+                                          conversation: widget.conversation,
+                                          channelId:
+                                              widget.conversation.channelId,
+                                          onEdit: (id, text) => _composerKey
+                                              .currentState
+                                              ?.enterEditMode(id, text),
+                                        );
+                                      }, childCount: messages.length),
+                                    ),
+                                  ),
+                                  if (historyState.isLoading)
+                                    const SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: 16,
+                                        ),
+                                        child: Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
                                       ),
+                                    ),
+                                  if (!historyState.isLoading &&
+                                      historyState.loadFailed)
+                                    SliverToBoxAdapter(
+                                      child: _HistoryLoadError(
+                                        message: "Couldn't load messages.",
+                                        onRetry: historyState.retryLoad,
+                                      ),
+                                    )
+                                  else if (!historyState.isLoading &&
+                                      historyState.loadMoreFailed)
+                                    SliverToBoxAdapter(
+                                      child: _HistoryLoadError(
+                                        message:
+                                            "Couldn't load older messages.",
+                                        onRetry: historyState.loadMore,
+                                      ),
+                                    ),
+                                  if (!historyState.hasMore)
+                                    SliverToBoxAdapter(
+                                      child: historyState.historyCleared
+                                          ? const _HistoryClearedNote()
+                                          : isOwnSpace
+                                          ? OwnSpaceIntro(
+                                              conversation: widget.conversation,
+                                              onEditProfile: _editOwnProfile,
+                                            )
+                                          : DmProfileCard(
+                                              conversation: widget.conversation,
+                                              onViewProfile: () =>
+                                                  _handleMenuAction(
+                                                    'view_profile',
+                                                  ),
+                                            ),
+                                    ),
+                                ],
                               ),
-                          ],
+                            );
+                          },
                         ),
-                      );
-                    },
+                      ),
+                      DmMessageComposer(
+                        key: _composerKey,
+                        recipientName: _recipientHandle,
+                        hintText: _isOwnSpace
+                            ? 'Write a note to yourself'
+                            : null,
+                        channelId: widget.conversation.channelId,
+                        draftKey: widget.conversation.conversationKey,
+                        participants: widget.conversation.participants,
+                      ),
+                    ],
                   ),
                 ),
-                DmMessageComposer(
-                  key: _composerKey,
-                  recipientName: _recipientHandle,
-                  hintText: _isOwnSpace ? 'Write a note to yourself' : null,
-                  channelId: widget.conversation.channelId,
-                  draftKey: widget.conversation.conversationKey,
-                  participants: widget.conversation.participants,
-                ),
+                if (_searchOpen)
+                  SearchPanel(
+                    key: ValueKey(widget.conversation.channelId),
+                    channelId: widget.conversation.channelId,
+                    onClose: () => setState(() => _searchOpen = false),
+                  ),
               ],
             ),
 
@@ -548,85 +608,97 @@ class _HistoryLoadError extends StatelessWidget {
   }
 }
 
-class _ConversationSearchDialog extends StatefulWidget {
-  final String displayName;
-  final List<Map<String, dynamic>> messages;
+/// The other person's profile, opened from the header's "View profile".
+class _ParticipantProfileDialog extends StatelessWidget {
+  final DmConversation conversation;
+  final String handle;
 
-  const _ConversationSearchDialog({
-    required this.displayName,
-    required this.messages,
+  const _ParticipantProfileDialog({
+    required this.conversation,
+    required this.handle,
   });
 
   @override
-  State<_ConversationSearchDialog> createState() =>
-      _ConversationSearchDialogState();
-}
-
-class _ConversationSearchDialogState extends State<_ConversationSearchDialog> {
-  final _controller = TextEditingController();
-
-  /// Message content is HTML. Search and show what the person actually wrote,
-  /// so tag names never match and no tags appear in the results.
-  static String _plainText(Object? content) => (content?.toString() ?? '')
-      .replaceAll(RegExp(r'</?(p|div|li|ul|ol|br|blockquote|pre)\b[^>]*>'), ' ')
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll('&nbsp;', ' ')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&quot;', '"')
-      .replaceAll('&#39;', "'")
-      .replaceAll('&amp;', '&')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final query = _controller.text.trim().toLowerCase();
-    final results = widget.messages
-        .map((message) => _plainText(message['content']))
-        .where((text) => text.toLowerCase().contains(query));
-    return AlertDialog(
-      title: Text('Search ${widget.displayName}'),
-      content: SizedBox(
-        width: 420,
-        height: 360,
-        child: Column(
-          mainAxisSize: MainAxisSize.max,
-          children: [
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              decoration: const InputDecoration(hintText: 'Search messages'),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 12),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                children: query.isEmpty
-                    ? const [Text('Enter a search term')]
-                    : results
-                          .map(
-                            (text) => ListTile(dense: true, title: Text(text)),
-                          )
-                          .toList(),
+    final colors = context.colors;
+    final textTheme = context.textTheme;
+    final name = conversation.displayName.trim();
+    final avatarUrl = conversation.effectiveAvatarUrl;
+    final email = conversation.participantEmail?.trim() ?? '';
+
+    return Dialog(
+      backgroundColor: colors.background,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: SizedBox(
+        width: 360,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 36,
+                backgroundColor: colors.primary,
+                backgroundImage: avatarUrl != null
+                    ? NetworkImage(avatarUrl)
+                    : null,
+                child: avatarUrl == null
+                    ? Text(
+                        avatarInitial(name),
+                        style: textTheme.headlineSmall?.copyWith(
+                          color: colors.onPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Text(
+                conversation.displayName,
+                textAlign: TextAlign.center,
+                style: textTheme.titleMedium?.copyWith(
+                  color: colors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                handle,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+              if (email.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Divider(height: 1, color: colors.divider),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Icon(Icons.mail_outline, size: 18, color: colors.textHint),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SelectableText(
+                        email,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }
@@ -789,6 +861,7 @@ class _DmChatHeader extends StatelessWidget {
               menuItem('pinned_messages', 'Pinned messages'),
               menuItem('search_in_conversation', 'Search in conversation'),
               menuItem('view_files', 'View files'),
+              menuItem('export_transcript', 'Export transcript'),
               const PopupMenuDivider(height: 1),
               menuItem('clear_history', 'Clear history'),
               menuItem('block_user', 'Block User'),
@@ -822,7 +895,12 @@ class _MessageBubble extends ConsumerWidget {
     String text,
     TextStyle defaultStyle,
     MessageLinks links,
-  ) => buildInlineMarkdownSpan(text, defaultStyle, plainText: links.span);
+  ) => buildInlineMarkdownSpan(
+    text,
+    defaultStyle,
+    plainText: links.span,
+    link: links.link,
+  );
 
   /// Splits [text] around Markdown thematic breaks: a line that is exactly
   /// `---` at the start of the message or after a blank line. A `---` right
@@ -879,6 +957,24 @@ class _MessageBubble extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _pin(
+    BuildContext context,
+    WidgetRef ref,
+    String messageId,
+  ) async {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final pinned = await ref
+        .read(chatHistoryProvider(channelId))
+        .pinMessage(messageId);
+    AppToastService.showWith(
+      overlay,
+      type: pinned ? AppToastType.success : AppToastType.error,
+      message: pinned
+          ? 'Message pinned'
+          : "Couldn't pin the message. Try again.",
     );
   }
 
@@ -1003,10 +1099,13 @@ class _MessageBubble extends ConsumerWidget {
                   ),
                 ),
                 if (content.isNotEmpty)
-                  _OwnMessageMenu(
-                    enabled: isMe && status == null,
-                    onEdit: () => onEdit(messageId, content),
-                    onDelete: () => _confirmDelete(context, ref, messageId),
+                  _MessageMenu(
+                    enabled: status == null,
+                    onPin: () => _pin(context, ref, messageId),
+                    onEdit: isMe ? () => onEdit(messageId, content) : null,
+                    onDelete: isMe
+                        ? () => _confirmDelete(context, ref, messageId)
+                        : null,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -1033,12 +1132,14 @@ class _MessageBubble extends ConsumerWidget {
                     child: content.isNotEmpty
                         ? _AttachmentBubbleList(media: media, isMe: isMe)
                         // No text to hang the menu on, so it goes on the
-                        // attachments (Delete only: there is nothing to edit).
-                        : _OwnMessageMenu(
-                            enabled: isMe && status == null,
+                        // attachments (no Edit: there is nothing to edit).
+                        : _MessageMenu(
+                            enabled: status == null,
+                            onPin: () => _pin(context, ref, messageId),
                             onEdit: null,
-                            onDelete: () =>
-                                _confirmDelete(context, ref, messageId),
+                            onDelete: isMe
+                                ? () => _confirmDelete(context, ref, messageId)
+                                : null,
                             child: _AttachmentBubbleList(
                               media: media,
                               isMe: isMe,
@@ -1231,26 +1332,30 @@ class _AttachmentBubbleList extends StatelessWidget {
 }
 
 /// Shows a "more" button on hover, and a right-click or long-press menu, for
-/// your own messages, with Edit and Delete. The long press is for touch input,
-/// where there is no hover or right click.
-class _OwnMessageMenu extends StatefulWidget {
-  const _OwnMessageMenu({
+/// a sent message: Pin on every message, and Edit and Delete on your own. The
+/// long press is for touch input, where there is no hover or right click.
+class _MessageMenu extends StatefulWidget {
+  const _MessageMenu({
     required this.enabled,
+    required this.onPin,
     required this.onEdit,
     required this.onDelete,
     required this.child,
   });
 
   final bool enabled;
+  final VoidCallback onPin;
+
+  /// Null on other people's messages, which can't be edited or deleted.
   final VoidCallback? onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
   final Widget child;
 
   @override
-  State<_OwnMessageMenu> createState() => _OwnMessageMenuState();
+  State<_MessageMenu> createState() => _MessageMenuState();
 }
 
-class _OwnMessageMenuState extends State<_OwnMessageMenu> {
+class _MessageMenuState extends State<_MessageMenu> {
   final _menuKey = GlobalKey<PopupMenuButtonState<String>>();
   bool _hovered = false;
 
@@ -1273,18 +1378,23 @@ class _OwnMessageMenuState extends State<_OwnMessageMenu> {
                 key: _menuKey,
                 tooltip: 'Message actions',
                 icon: const Icon(Icons.more_horiz, size: 18),
-                onSelected: (value) =>
-                    value == 'edit' ? widget.onEdit?.call() : widget.onDelete(),
+                onSelected: (value) => switch (value) {
+                  'pin' => widget.onPin(),
+                  'edit' => widget.onEdit?.call(),
+                  _ => widget.onDelete?.call(),
+                },
                 itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'pin', child: Text('Pin message')),
                   if (widget.onEdit != null)
                     const PopupMenuItem(
                       value: 'edit',
                       child: Text('Edit message'),
                     ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete message'),
-                  ),
+                  if (widget.onDelete != null)
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete message'),
+                    ),
                 ],
               ),
             ),

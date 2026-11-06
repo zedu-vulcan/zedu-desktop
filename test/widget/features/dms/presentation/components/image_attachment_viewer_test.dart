@@ -69,6 +69,49 @@ void main() {
     expect(controller.value.getMaxScaleOnAxis(), closeTo(1, 0.001));
   });
 
+  testWidgets('zoom buttons keep the middle of the viewer in place', (
+    tester,
+  ) async {
+    await _openViewer(tester);
+    final viewer = find.byType(InteractiveViewer);
+    final controller = tester
+        .widget<InteractiveViewer>(viewer)
+        .transformationController!;
+    final center = tester.getSize(viewer).center(Offset.zero);
+
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Zoom in'));
+    await tester.pump();
+
+    expect(controller.value.getMaxScaleOnAxis(), closeTo(2.25, 0.001));
+    final sceneCenter = controller.toScene(center);
+    expect(sceneCenter.dx, closeTo(center.dx, 0.001));
+    expect(sceneCenter.dy, closeTo(center.dy, 0.001));
+  });
+
+  testWidgets('zoom buttons follow zoom made outside the toolbar', (
+    tester,
+  ) async {
+    await _openViewer(tester);
+    final controller = tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+        .transformationController!;
+
+    // What the mouse wheel leaves behind at the 4x limit.
+    controller.value = Matrix4.diagonal3Values(4, 4, 1);
+    await tester.pump();
+
+    final zoomIn = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.zoom_in_rounded),
+    );
+    expect(zoomIn.onPressed, isNull);
+
+    await tester.tap(find.byTooltip('Zoom out'));
+    await tester.pump();
+    expect(controller.value.getMaxScaleOnAxis(), closeTo(4 / 1.5, 0.001));
+  });
+
   testWidgets('rotate turns the image a quarter at a time', (tester) async {
     await _openViewer(tester);
 

@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:io' show Directory, File, Platform;
 
 import 'package:audioplayers/audioplayers.dart'
     show AudioPlayer, DeviceFileSource;
 
 import 'package:zedu/core/core.dart';
+import 'package:zedu/core/utils/shortcut_manager.dart';
 import 'package:zedu/features/features.dart';
 
 import 'composer/composer.dart';
@@ -20,6 +20,10 @@ class DmMessageComposer extends ConsumerStatefulWidget {
   final ValueChanged<String>? onSend;
   final bool isChannel;
 
+  /// Recorder used for voice notes. Overridable so tests can avoid the
+  /// platform microphone.
+  final AudioRecorder? audioRecorder;
+
   const DmMessageComposer({
     super.key,
     required this.recipientName,
@@ -29,6 +33,7 @@ class DmMessageComposer extends ConsumerStatefulWidget {
     this.participants = const [],
     this.onSend,
     this.isChannel = false,
+    this.audioRecorder,
   });
 
   @override
@@ -41,8 +46,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   final _scrollController = ScrollController();
 
   bool _showEmojiPicker = false;
+
+  /// Whether the plus menu with the less-used actions is open.
+  bool _showMoreActions = false;
   bool _isEditMode = false;
-  final AudioRecorder _audioRecorder = AudioRecorder();
+  late final AudioRecorder _audioRecorder;
   bool _isRecording = false;
   bool _isStarting = false;
   // File the recorder is writing to right now, so it can be removed if the
@@ -76,10 +84,15 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
   Timer? _draftSaveDebounce;
 
+  /// Last time this composer published a typing keystroke. Publishing is
+  /// throttled so holding a key doesn't notify on every character.
+  DateTime? _lastTypingPublish;
+
   /// Draft store for the current user and org. Held in a field because `ref`
   /// can't be used in [dispose], and a flush must go to the store the draft
   /// was typed against.
   late DmDraftStore _drafts;
+  late final ComposerFileStore _fileStore;
 
   /// Set when this conversation is deleted, so closing the composer doesn't
   /// save its text back as a draft.
@@ -88,7 +101,9 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   @override
   void initState() {
     super.initState();
+    _audioRecorder = widget.audioRecorder ?? AudioRecorder();
     _drafts = ref.read(dmDraftStoreProvider);
+    _fileStore = ref.read(composerFileStoreProvider);
     _controller = RichTextController();
     _controller.addListener(_onTextChanged);
     _draftChannelId = _draftKey;
@@ -109,6 +124,9 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           _draftChannelId ?? oldWidget.draftKey ?? oldWidget.channelId;
       final previousDrafts = _drafts;
       final wasEditing = _isEditMode;
+      // Typing belongs to the previous conversation; drop it there. The
+      // throttle resets so the first keystroke here publishes at once.
+      _clearTypingActivity(previousChannel);
 
       // Edit-mode text is an already-sent message, never a draft. Otherwise
       // flush the previous conversation's text. Store and chat-history writes
@@ -146,6 +164,8 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     // the write is deferred because the store notifies providers, which isn't
     // allowed while the tree is unmounting.
     _draftSaveDebounce?.cancel();
+    // Best effort: the entry expires on its own if the read below can't run.
+    _clearTypingActivity(widget.channelId);
     if (!_isEditMode &&
         !_channelDeleted &&
         _controller.text.trim().isNotEmpty) {
@@ -201,6 +221,69 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
       if (!mounted) return;
       _drafts.save(_draftKey, text);
     });
+    _publishTypingActivity();
+  }
+
+  /// The signed-in user's id, or null when auth isn't available (e.g. a
+  /// widget test pumping the composer without auth set up). Typing presence
+  /// is ancillary: it stays inert rather than breaking the composer.
+  String? get _selfUserId {
+    try {
+      final id = ref.read(authNotifierProvider).user?.id;
+      return id == null || id.isEmpty ? null : id;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? get _selfDisplayName {
+    try {
+      final user = ref.read(authNotifierProvider).user;
+      if (user == null) return null;
+      final name = '${user.firstName} ${user.lastName}'.trim();
+      final display = name.isNotEmpty ? name : user.username;
+      return display.isEmpty ? null : display;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Tells the conversation someone is typing, throttled to one publish
+  /// every 3 seconds while the box holds text. An empty box clears the
+  /// entry at once; otherwise the entry expires 4 seconds after the last
+  /// keystroke (see [TypingPresenceNotifier]).
+  void _publishTypingActivity() {
+    if (widget.channelId.isEmpty) return;
+    final userId = _selfUserId;
+    if (userId == null) return;
+    final typing = ref.read(typingPresenceProvider(widget.channelId).notifier);
+    if (_controller.text.trim().isEmpty) {
+      typing.clearTyping(userId);
+      _lastTypingPublish = null;
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastTypingPublish != null &&
+        now.difference(_lastTypingPublish!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastTypingPublish = now;
+    final displayName = _selfDisplayName;
+    if (displayName == null) return;
+    typing.setTyping(userId: userId, displayName: displayName);
+  }
+
+  /// Drops this user's typing entry for [channelId] without notifying.
+  void _clearTypingActivity(String channelId) {
+    if (channelId.isEmpty) return;
+    final userId = _selfUserId;
+    if (userId == null) return;
+    try {
+      ref.read(typingPresenceProvider(channelId).notifier).clearTyping(userId);
+    } catch (_) {
+      // The presence entry expires on its own a few seconds later.
+    }
+    _lastTypingPublish = null;
   }
 
   void _updateFormattingState() {
@@ -217,11 +300,29 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     }
     final before = text.substring(0, sel.baseOffset);
     setState(() {
-      _isBold = '**'.allMatches(before).length % 2 != 0;
-      _isItalic = RegExp(r'(?<!\*)\*(?!\*)').allMatches(before).length % 2 != 0;
-      _isStrikethrough = '~~'.allMatches(before).length % 2 != 0;
-      _isCode = '`'.allMatches(before).length % 2 != 0;
+      _isBold = _isMarkerOpen(before, '**');
+      _isItalic = _isMarkerOpen(before, '*');
+      _isStrikethrough = _isMarkerOpen(before, '~~');
+      _isCode = _isMarkerOpen(before, '`');
     });
+  }
+
+  static final _loneAsterisk = RegExp(r'(?<!\*)\*(?!\*)');
+
+  /// Whether [textBefore] leaves a [marker] run open, so text typed next is
+  /// inside it. A lone `*` is italic; the `*`s of `**` belong to bold.
+  static bool _isMarkerOpen(String textBefore, String marker) {
+    final count = marker == '*'
+        ? _loneAsterisk.allMatches(textBefore).length
+        : marker.allMatches(textBefore).length;
+    return count.isOdd;
+  }
+
+  /// Whether [textAfter] starts with [marker] as its own token: for italic,
+  /// a `*` that is not part of `**`.
+  static bool _startsWithMarker(String textAfter, String marker) {
+    if (marker == '*') return textAfter.startsWith(_loneAsterisk);
+    return textAfter.startsWith(marker);
   }
 
   void _updateMentionSuggestions() {
@@ -255,9 +356,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   void _insertMention(DmParticipant participant) {
     final text = _controller.text;
     final sel = _controller.selection;
+    if (sel.baseOffset < 0) return;
     final before = text.substring(0, sel.baseOffset);
     final atIndex = before.lastIndexOf('@');
     if (atIndex == -1) return;
+    if (before.substring(atIndex).contains(RegExp(r'\s'))) return;
 
     final after = text.substring(sel.baseOffset);
     final replacement = '@${participant.username} ';
@@ -268,6 +371,31 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     );
     setState(() => _mentionSuggestions = []);
     _focusNode.requestFocus();
+  }
+
+  /// The participants [text] @mentions, in the shape the server reads
+  /// (`{type, id}`), like the web composer. Without it the server sees only
+  /// the text "@name", records no mention and notifies nobody. Null when no
+  /// one is mentioned, so the request leaves the field out as before.
+  List<Map<String, String>>? _mentionsIn(String text) {
+    final mentions = <Map<String, String>>[];
+    final seen = <String>{};
+    for (final participant in widget.participants) {
+      final username = participant.username.trim();
+      if (participant.userId.isEmpty || username.isEmpty) continue;
+      // A whole @handle only: not part of an email or a longer handle.
+      final handle = RegExp(
+        '(?<![\\w@.])@${RegExp.escape(username)}(?![\\w.-])',
+        caseSensitive: false,
+      );
+      if (handle.hasMatch(text) && seen.add(participant.userId)) {
+        mentions.add({
+          'type': participant.userType == 'bot' ? 'bot' : 'user',
+          'id': participant.userId,
+        });
+      }
+    }
+    return mentions.isEmpty ? null : mentions;
   }
 
   void _handleSend() {
@@ -296,6 +424,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           .sendMessage(
             text,
             media: [..._pendingFiles, ?_voiceNote],
+            mentions: _mentionsIn(text),
             isChannel: widget.isChannel,
           );
       widget.onSend?.call(text);
@@ -304,6 +433,8 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     // The message is out, so the draft no longer exists.
     _draftSaveDebounce?.cancel();
     _drafts.clear(_draftKey);
+    // Sent text is no longer typing.
+    _clearTypingActivity(widget.channelId);
 
     _controller.clear();
     // Saving an edit sends nothing, so a waiting voice note or file is kept.
@@ -357,6 +488,20 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
     final key = event.logicalKey;
 
+    // Pass system-reserved shortcuts (Ctrl+S, Ctrl+P, Cmd+S, Cmd+P) through
+    // to the operating system instead of handling them in the app.
+    final modifiers = <String>{};
+    if (HardwareKeyboard.instance.isControlPressed) modifiers.add('ctrl');
+    if (HardwareKeyboard.instance.isShiftPressed) modifiers.add('shift');
+    if (HardwareKeyboard.instance.isAltPressed) modifiers.add('alt');
+    if (HardwareKeyboard.instance.isMetaPressed) modifiers.add('meta');
+
+    if (modifiers.isNotEmpty &&
+        ref.read(shortcutManagerProvider.notifier).shouldPassToSystem(key,
+            modifiers)) {
+      return KeyEventResult.ignored;
+    }
+
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
       final hasModifier =
@@ -402,6 +547,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         setState(() => _mentionSuggestions = []);
         return KeyEventResult.handled;
       }
+      if (_showMoreActions) {
+        setState(() => _showMoreActions = false);
+        return KeyEventResult.handled;
+      }
       if (_isEditMode) {
         _exitEditMode();
         return KeyEventResult.handled;
@@ -435,7 +584,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
     if (!sel.isValid) return;
 
-    if (sel.isCollapsed) {
+    if (sel.isCollapsed &&
+        before == after &&
+        _isMarkerOpen(text.substring(0, sel.start), before)) {
+      _endMarkerRun(before);
+    } else if (sel.isCollapsed) {
       final insert = '$before$after';
       final newText =
           text.substring(0, sel.start) + insert + text.substring(sel.end);
@@ -459,6 +612,36 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
+  /// Ends the [marker] run the caret is in, so a second click on Bold (or
+  /// Italic, Strikethrough, Code) turns the format off instead of inserting
+  /// another, empty pair of markers.
+  void _endMarkerRun(String marker) {
+    final text = _controller.text;
+    final caret = _controller.selection.start;
+    final head = text.substring(0, caret);
+    final tail = text.substring(caret);
+
+    if (head.endsWith(marker) && _startsWithMarker(tail, marker)) {
+      // Nothing typed between the markers yet: drop the empty pair.
+      final start = caret - marker.length;
+      _controller.value = TextEditingValue(
+        text: text.substring(0, start) + tail.substring(marker.length),
+        selection: TextSelection.collapsed(offset: start),
+      );
+    } else if (_startsWithMarker(tail, marker)) {
+      // Step over the closing marker so the next text is plain.
+      _controller.selection = TextSelection.collapsed(
+        offset: caret + marker.length,
+      );
+    } else {
+      // The run has no closing marker yet: close it here.
+      _controller.value = TextEditingValue(
+        text: head + marker + tail,
+        selection: TextSelection.collapsed(offset: caret + marker.length),
+      );
+    }
+  }
+
   void _insertBold() => _wrapSelection('**');
   void _insertItalic() => _wrapSelection('*');
   void _insertStrikethrough() => _wrapSelection('~~');
@@ -470,6 +653,19 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     final text = _controller.text;
     final sel = _controller.selection;
     if (!sel.isValid) return;
+    if (sel.isCollapsed) {
+      // "> " only quotes at the start of a line, so a bare caret prefixes the
+      // current line and the caret stays on the same character.
+      final lineStart = sel.start == 0
+          ? 0
+          : text.lastIndexOf('\n', sel.start - 1) + 1;
+      _controller.value = TextEditingValue(
+        text: '${text.substring(0, lineStart)}> ${text.substring(lineStart)}',
+        selection: TextSelection.collapsed(offset: sel.start + 2),
+      );
+      _focusNode.requestFocus();
+      return;
+    }
     final selected = text.substring(sel.start, sel.end);
     // A selection that ends right after a newline leaves an empty last piece.
     // Quoting it would put "> " on the first line that is not selected.
@@ -516,6 +712,28 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
+  void _toggleMoreActions() {
+    setState(() => _showMoreActions = !_showMoreActions);
+  }
+
+  /// Closes the plus menu, then runs the picked action as before.
+  void _runMoreAction(VoidCallback action) {
+    setState(() => _showMoreActions = false);
+    action();
+  }
+
+  void _insertChannelTag() {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final pos = sel.isValid ? sel.baseOffset : text.length;
+    final newText = '${text.substring(0, pos)}#${text.substring(pos)}';
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: pos + 1),
+    );
+    _focusNode.requestFocus();
+  }
+
   void _toggleEmojiPicker() {
     setState(() => _showEmojiPicker = !_showEmojiPicker);
   }
@@ -523,11 +741,14 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   void _insertEmoji(String emoji) {
     final text = _controller.text;
     final sel = _controller.selection;
-    final pos = sel.isValid ? sel.baseOffset : text.length;
-    final newText = text.substring(0, pos) + emoji + text.substring(pos);
+    // A highlighted word is replaced; start and end also cover a selection
+    // dragged backwards.
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : text.length;
+    final newText = text.replaceRange(start, end, emoji);
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: pos + emoji.length),
+      selection: TextSelection.collapsed(offset: start + emoji.length),
     );
     _focusNode.requestFocus();
   }
@@ -560,12 +781,16 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         _showVoiceError('Allow microphone access to record a voice message.');
         return;
       }
-      final path =
-          '${Directory.systemTemp.path}${Platform.pathSeparator}zedu-voice-${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final pathResult = _fileStore.newRecordingPath();
+      if (pathResult case Failure(:final error)) {
+        _showVoiceError(error.message);
+        return;
+      }
+      final path = (pathResult as Success<String>).value;
       _activeRecordingPath = path;
       await _audioRecorder.start(const RecordConfig(), path: path);
       // Only remember the file once recording really started.
-      appRecordedPaths.add(path);
+      _fileStore.trackRecording(path);
       if (!mounted) {
         // dispose() is already stopping and cleaning up the recorder.
         await _deleteOwnRecording(path);
@@ -618,7 +843,12 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _recordTimer?.cancel();
     try {
       await _deleteRecording(await _audioRecorder.stop());
-    } catch (_) {}
+    } catch (error) {
+      AppLogger.d(
+        'Failed to stop the cancelled voice recording: $error',
+        tag: 'DmMessageComposer',
+      );
+    }
     _activeRecordingPath = null;
     if (mounted) setState(() => _isRecording = false);
   }
@@ -658,16 +888,16 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   /// always comes from the recorder itself, never from a file the user picked.
   Future<void> _deleteOwnRecording(String? path) async {
     if (path == null) return;
-    appRecordedPaths.add(path);
+    _fileStore.trackRecording(path);
     await _deleteRecording(path);
   }
 
   /// Deletes a recording this app made. Never used on files the user picked.
   Future<void> _deleteRecording(String? path) async {
-    if (path == null || !appRecordedPaths.remove(path)) return;
-    try {
-      await File(path).delete();
-    } catch (_) {}
+    final result = await _fileStore.deleteRecording(path);
+    if (result case Failure(:final error)) {
+      AppLogger.w(error.message, tag: 'DmMessageComposer');
+    }
   }
 
   String _formatSeconds(int total) {
@@ -770,8 +1000,8 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     for (final file in newFiles) {
       try {
         if (file.path.isNotEmpty) {
-          final fileOnDisk = File(file.path);
-          if (!await fileOnDisk.exists()) {
+          final exists = await _fileStore.exists(file.path);
+          if (exists is! Success<bool> || !exists.value) {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -799,7 +1029,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'File ${file.name} could not be attached: invalid file.',
+                "Couldn't read ${file.path.split(RegExp(r'[\\/]')).last}.",
               ),
             ),
           );
@@ -817,23 +1047,15 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
       type: FileType.any,
     );
     if (result == null) return;
+    // The paths come from the system file dialog, so there is no traversal to
+    // guard against: on macOS and Linux every one of them starts with '/', and
+    // a name such as `notes..v2.txt` is ordinary. `addFiles` checks that each
+    // file exists and is under the size limit. The MIME type is left unset
+    // because the upload works it out from the file name; `f.extension` is a
+    // bare extension such as `pdf`, not a MIME type.
     final picked = result.files
         .where((PlatformFile f) => f.path != null)
-        .map((PlatformFile f) {
-          // Validate file path to prevent path traversal and invalid files
-          if (f.path == null ||
-              f.path!.contains('..') ||
-              f.path!.startsWith('/')) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Invalid file path: ${f.path}')),
-              );
-            }
-            return null;
-          }
-          return XFile(f.path!, name: f.name, mimeType: f.extension);
-        })
-        .whereType<XFile>()
+        .map((PlatformFile f) => XFile(f.path!, name: f.name))
         .toList();
     await addFiles(picked);
   }
@@ -881,13 +1103,20 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
               final fileName =
                   'pasted_image_${DateTime.now().millisecondsSinceEpoch}.$ext';
               try {
-                final tempPath =
-                    '${Directory.systemTemp.path}${Platform.pathSeparator}$fileName';
-                final tempFile = File(tempPath);
-                await tempFile.writeAsBytes(bytes);
-                await addFiles([
-                  XFile(tempPath, name: fileName, mimeType: mime),
-                ]);
+                final saved = await _fileStore.writeTemporaryFile(
+                  fileName,
+                  bytes,
+                );
+                switch (saved) {
+                  case Success(:final value):
+                    await addFiles([
+                      XFile(value, name: fileName, mimeType: mime),
+                    ]);
+                  case Failure():
+                    await addFiles([
+                      XFile.fromData(bytes, name: fileName, mimeType: mime),
+                    ]);
+                }
               } catch (_) {
                 await addFiles([
                   XFile.fromData(bytes, name: fileName, mimeType: mime),
@@ -919,9 +1148,9 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
             'gif',
             'bmp',
           ].contains(fileExt)) {
-            final file = File(filePath);
-            if (await file.exists()) {
-              final fileName = filePath.split(Platform.pathSeparator).last;
+            final exists = await _fileStore.exists(filePath);
+            if (exists is Success<bool> && exists.value) {
+              final fileName = XFile(filePath).name;
               await addFiles([XFile(filePath, name: fileName)]);
             }
           }
@@ -957,6 +1186,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     final mainColumn = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        TypingIndicator(
+          channelId: widget.channelId,
+          excludeUserId: _selfUserId,
+        ),
         if (_mentionSuggestions.isNotEmpty)
           MentionSuggestionList(
             suggestions: _mentionSuggestions,
@@ -1111,14 +1344,6 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                   child: Row(
                     children: [
                       ToolbarButton(
-                        icon: Icons.attach_file_rounded,
-                        tooltip: 'Attach file',
-                        onTap: _pickFiles,
-                        colors: colors,
-                        isActive: _pendingFiles.isNotEmpty,
-                      ),
-                      const SizedBox(width: 2),
-                      ToolbarButton(
                         icon: Icons.emoji_emotions_outlined,
                         tooltip: 'Emoji',
                         onTap: _toggleEmojiPicker,
@@ -1144,52 +1369,60 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                         },
                         colors: colors,
                       ),
+                      const SizedBox(width: 2),
                       ToolbarButton(
-                        icon: Icons.tag,
-                        tooltip: 'Channel tag',
-                        onTap: () {
-                          final text = _controller.text;
-                          final sel = _controller.selection;
-                          final pos = sel.isValid
-                              ? sel.baseOffset
-                              : text.length;
-                          final newText =
-                              '${text.substring(0, pos)}#${text.substring(pos)}';
-                          _controller.value = TextEditingValue(
-                            text: newText,
-                            selection: TextSelection.collapsed(offset: pos + 1),
-                          );
-                          _focusNode.requestFocus();
-                        },
+                        icon: _showMoreActions ? Icons.close : Icons.add,
+                        tooltip: _showMoreActions
+                            ? 'Close more actions'
+                            : 'More actions',
+                        onTap: _toggleMoreActions,
                         colors: colors,
+                        isActive: _showMoreActions,
                       ),
-                      ToolbarButton(
-                        icon: Icons.horizontal_rule_rounded,
-                        tooltip: 'Divider',
-                        onTap: _insertDivider,
-                        colors: colors,
-                      ),
-                      const SizedBox(width: 4),
-                      ToolbarButton(
-                        icon: _isRecording
-                            ? Icons.stop_rounded
-                            : Icons.mic_none_rounded,
-                        tooltip: _isRecording
-                            ? 'Stop recording'
-                            : 'Voice message',
-                        onTap: _toggleVoiceRecording,
-                        colors: colors,
-                        isActive: _isRecording || _voiceNote != null,
-                      ),
+                      if (_showMoreActions) ...[
+                        ToolbarButton(
+                          icon: Icons.attach_file_rounded,
+                          tooltip: 'Attach file',
+                          onTap: () => _runMoreAction(_pickFiles),
+                          colors: colors,
+                          isActive: _pendingFiles.isNotEmpty,
+                        ),
+                        ToolbarButton(
+                          icon: _isRecording
+                              ? Icons.stop_rounded
+                              : Icons.mic_none_rounded,
+                          tooltip: _isRecording
+                              ? 'Stop recording'
+                              : 'Voice message',
+                          onTap: () => _runMoreAction(_toggleVoiceRecording),
+                          colors: colors,
+                          isActive: _isRecording || _voiceNote != null,
+                        ),
+                        ToolbarButton(
+                          icon: Icons.tag,
+                          tooltip: 'Channel tag',
+                          onTap: () => _runMoreAction(_insertChannelTag),
+                          colors: colors,
+                        ),
+                        ToolbarButton(
+                          icon: Icons.horizontal_rule_rounded,
+                          tooltip: 'Divider',
+                          onTap: () => _runMoreAction(_insertDivider),
+                          colors: colors,
+                        ),
+                      ],
                       const Spacer(),
-                      GestureDetector(
-                        onTap: _handleSend,
-                        child: Icon(
-                          Icons.send_rounded,
-                          color: hasSendableContent
-                              ? colors.primary
-                              : colors.textHint.withValues(alpha: 0.55),
-                          size: 22,
+                      Tooltip(
+                        message: 'Send message',
+                        child: GestureDetector(
+                          onTap: hasSendableContent ? _handleSend : null,
+                          child: Icon(
+                            Icons.send_rounded,
+                            color: hasSendableContent
+                                ? colors.primary
+                                : colors.textHint.withValues(alpha: 0.55),
+                            size: 22,
+                          ),
                         ),
                       ),
                     ],

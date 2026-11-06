@@ -231,4 +231,34 @@ void main() {
       expect(find.text(timestamp), findsNothing);
     });
   });
+
+  testWidgets('renders active tab count badge with primaryBg token', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildTestMaterialApp(
+        Scaffold(
+          body: SingleChildScrollView(
+            child: UserManagementSection(
+              members: const [],
+              isSaving: false,
+              onInvite: ({required email, required role}) async {},
+              onUpdate: (_) {},
+              onRemove: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final countFinder = find.ancestor(
+      of: find.text('0'),
+      matching: find.byType(Container),
+    );
+    expect(countFinder, findsWidgets);
+    final containerWidget = tester.widget<Container>(countFinder.first);
+    final decoration = containerWidget.decoration as BoxDecoration?;
+    expect(decoration?.color, equals(AppPalette.light.primaryBg));
+  });
 }
