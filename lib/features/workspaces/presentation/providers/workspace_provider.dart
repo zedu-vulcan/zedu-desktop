@@ -169,6 +169,9 @@ class WorkspaceNotifier extends Notifier<WorkspaceState> {
 
     _isSwitchPending = false;
     state = state.copyWith(selectedWorkspace: workspace, isLoading: false);
+    // A DM opened in the old workspace doesn't belong to the new one, so
+    // close it, the same way the open channel resets (#1442).
+    ref.read(selectedDmProvider.notifier).select(null);
   }
 
   void removeWorkspace(String id) {
