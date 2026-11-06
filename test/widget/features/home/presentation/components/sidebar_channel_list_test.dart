@@ -2,15 +2,29 @@ import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 import '../../../../../helpers/helpers.dart';
 
-Channel _channel(String name, {bool archived = false, String org = 'org-1'}) =>
-    Channel(
-      id: 'channel-$name',
-      name: name,
-      description: '',
-      organisationId: org,
-      ownerId: 'user-1',
-      archived: archived,
-    );
+Channel _channel(
+  String name, {
+  bool archived = false,
+  String org = 'org-1',
+  int unread = 0,
+}) => Channel(
+  id: 'channel-$name',
+  name: name,
+  description: '',
+  organisationId: org,
+  ownerId: 'user-1',
+  archived: archived,
+  unreadCount: unread,
+);
+
+class UnreadChannelNotifier extends ChannelNotifier {
+  @override
+  Future<List<Channel>> build() async => [
+    _channel('general', unread: 3),
+    _channel('random'),
+    _channel('busy', unread: 150),
+  ];
+}
 
 class FakeChannelNotifier extends ChannelNotifier {
   @override
@@ -80,6 +94,23 @@ void main() {
 
     FakeWorkspaceNotifier workspace() =>
         container.read(workspaceProvider.notifier) as FakeWorkspaceNotifier;
+
+    testWidgets('shows an unread badge only on channels with unreads (#2851)', (
+      tester,
+    ) async {
+      await pumpList(tester, channels: UnreadChannelNotifier.new);
+
+      expect(
+        find.byKey(const ValueKey('channel_unread_badge_general')),
+        findsOneWidget,
+      );
+      expect(find.text('3'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('channel_unread_badge_random')),
+        findsNothing,
+      );
+      expect(find.text('99+'), findsOneWidget);
+    });
 
     testWidgets('lists the active channels and hides archived ones', (
       tester,
