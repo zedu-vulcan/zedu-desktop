@@ -93,7 +93,11 @@ class PersonalProfilePanel extends ConsumerWidget {
                                   color: colors.accent,
                                 ),
                               )
-                            : Icon(Icons.person, size: 80, color: colors.accent),
+                            : Icon(
+                                Icons.person,
+                                size: 80,
+                                color: colors.accent,
+                              ),
                       );
 
                       return Container(

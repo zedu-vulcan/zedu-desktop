@@ -350,7 +350,9 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                               width: 52,
                               height: 36,
                               child: TextField(
-                                key: const Key('user_management_page_jump_input'),
+                                key: const Key(
+                                  'user_management_page_jump_input',
+                                ),
                                 controller: _pageJumpController,
                                 keyboardType: TextInputType.number,
                                 textAlign: TextAlign.center,
@@ -379,16 +381,20 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                                     ),
                                   ),
                                   hintText: '$currentPage',
-                                  hintStyle: context.textTheme.bodySmall?.copyWith(
-                                    color: context.colors.textHint,
-                                  ),
+                                  hintStyle: context.textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: context.colors.textHint,
+                                      ),
                                 ),
-                                onSubmitted: (val) => _jumpToPage(val, totalPages),
+                                onSubmitted: (val) =>
+                                    _jumpToPage(val, totalPages),
                               ),
                             ),
                             const SizedBox(width: 8),
                             AppButton.outlined(
-                              key: const Key('user_management_page_jump_button'),
+                              key: const Key(
+                                'user_management_page_jump_button',
+                              ),
                               label: 'Go',
                               expand: false,
                               height: 36,
