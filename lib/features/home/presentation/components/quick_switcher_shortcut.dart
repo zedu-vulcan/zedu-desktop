@@ -27,6 +27,11 @@ class QuickSwitcherShortcut extends ConsumerStatefulWidget {
 class _QuickSwitcherShortcutState extends ConsumerState<QuickSwitcherShortcut> {
   bool _open = false;
 
+  /// An action picked in the switcher. It runs once the switcher has closed,
+  /// because opening another dialog while `_open` is still set would be
+  /// ignored.
+  QuickSwitcherAction? _pendingAction;
+
   GoRouter get _router => widget.router ?? AppRouter.router;
 
   Future<void> _showSwitcher() async {
@@ -42,12 +47,30 @@ class _QuickSwitcherShortcutState extends ConsumerState<QuickSwitcherShortcut> {
         builder: (dialogContext) => _QuickSwitcherLoader(
           onSelected: (entry) {
             Navigator.of(dialogContext).pop();
-            _openEntry(entry);
+            final action = entry.action;
+            if (action != null) {
+              _pendingAction = action;
+            } else {
+              _openEntry(entry);
+            }
           },
         ),
       );
     } finally {
       _open = false;
+    }
+
+    final action = _pendingAction;
+    _pendingAction = null;
+    if (action != null && mounted) _runAction(action);
+  }
+
+  void _runAction(QuickSwitcherAction action) {
+    switch (action) {
+      case QuickSwitcherAction.openSettings:
+        _router.go(AppRouter.profile);
+      case QuickSwitcherAction.showShortcuts:
+        _showShortcuts();
     }
   }
 
@@ -147,6 +170,7 @@ class _QuickSwitcherLoaderState extends ConsumerState<_QuickSwitcherLoader> {
             ?.where((c) => !c.archived)
             .map((c) => QuickSwitcherEntry.channel(c.name, channelId: c.id)),
         ...?dms.value?.map(QuickSwitcherEntry.dm),
+        ...quickSwitcherActions,
       ],
       loading: channels.isLoading || dms.isLoading,
       onSelected: widget.onSelected,
