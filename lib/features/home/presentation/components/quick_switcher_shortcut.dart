@@ -4,7 +4,8 @@ import 'package:zedu/features/features.dart';
 /// Opens the [QuickSwitcherDialog] on Cmd+K (macOS) or Ctrl+K (Windows,
 /// Linux), and the [KeyboardShortcutsDialog] on Cmd+/ or Ctrl+/, from any
 /// screen once the user is signed in. Alt+Up and Alt+Down move to the
-/// previous or next conversation in the Home sidebar.
+/// previous or next conversation in the Home sidebar, and Cmd+, or Ctrl+,
+/// opens Settings.
 class QuickSwitcherShortcut extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -87,6 +88,18 @@ class _QuickSwitcherShortcutState extends ConsumerState<QuickSwitcherShortcut> {
     if (next != null) _openEntry(next);
   }
 
+  /// Opens Settings, the page the rail's Settings icon opens.
+  void _openSettings() {
+    final signedIn =
+        ref.read(authNotifierProvider).status == AuthStatus.authenticated;
+    if (_open || !signedIn) return;
+
+    final location = _router.routerDelegate.currentConfiguration.uri;
+    if (location.path != AppRouter.profile) {
+      _router.go(AppRouter.profile);
+    }
+  }
+
   void _openEntry(QuickSwitcherEntry entry) {
     final conversation = entry.conversation;
     if (conversation == null) {
@@ -121,6 +134,10 @@ class _QuickSwitcherShortcutState extends ConsumerState<QuickSwitcherShortcut> {
             _moveConversation(-1),
         const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () =>
             _moveConversation(1),
+        const SingleActivator(LogicalKeyboardKey.comma, control: true):
+            _openSettings,
+        const SingleActivator(LogicalKeyboardKey.comma, meta: true):
+            _openSettings,
       },
       child: widget.child,
     );
