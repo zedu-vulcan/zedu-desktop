@@ -16,21 +16,30 @@ final _orgProvider = NotifierProvider<_Org, String>(_Org.new);
 /// Returns a full page at once, except the pages listed in [held], which wait
 /// until the test completes them.
 class _FakeDmRepository implements DmRepository {
-  final held = <String, Completer<List<DmConversation>>>{};
+  final held = <String, Completer<DmConversationsPage>>{};
+  final requested = <String>[];
 
   void hold(String orgId, int page) =>
-      held['$orgId/$page'] = Completer<List<DmConversation>>();
+      held['$orgId/$page'] = Completer<DmConversationsPage>();
 
   @override
-  Future<List<DmConversation>> getConversations({
+  Future<DmConversationsPage> getConversations({
     required String orgId,
     int page = 1,
     bool recentDm = false,
     String? search,
   }) {
+    requested.add('$orgId/$page');
     final completer = held['$orgId/$page'];
     if (completer != null) return completer.future;
-    return Future.value(_fullPage(orgId, page));
+    return Future.value(
+      DmConversationsPage(
+        conversations: _fullPage(orgId, page),
+        currentPage: page,
+        totalPages: page + 1,
+        totalItems: (page + 1) * DmRepository.pageSize,
+      ),
+    );
   }
 
   @override
@@ -87,6 +96,34 @@ void main() {
     );
   });
 
+  test('two overlapping loadMore calls append the page once', () async {
+    repository.hold('org-a', 2);
+    final notifier = container.read(dmListProvider.notifier);
+
+    final first = notifier.loadMore();
+    final second = notifier.loadMore();
+    repository.held['org-a/2']!.complete(
+      DmConversationsPage(
+        conversations: _fullPage('org-a', 2),
+        currentPage: 2,
+        totalPages: 2,
+        totalItems: 40,
+      ),
+    );
+    await Future.wait([first, second]);
+
+    expect(repository.requested.where((key) => key == 'org-a/2').length, 1);
+    final ids = listedIds();
+    expect(ids.toSet().length, ids.length);
+    expect(
+      ids,
+      [
+        ..._fullPage('org-a', 1),
+        ..._fullPage('org-a', 2),
+      ].map((c) => c.channelId),
+    );
+  });
+
   test('clears the selected DM when the workspace changes', () {
     final selected = _conversation('channel-from-org-a');
     container.read(selectedDmProvider.notifier).select(selected);
@@ -118,7 +155,13 @@ void main() {
       await container.read(dmListProvider.future);
 
       // A short page, which would also mark the new list as having no more.
-      repository.held['org-a/2']!.complete([_conversation('late-from-a')]);
+      repository.held['org-a/2']!.complete(
+        DmConversationsPage(
+          conversations: [_conversation('late-from-a')],
+          currentPage: 2,
+          totalPages: 2,
+        ),
+      );
       await pending;
 
       expect(listedIds(), _fullPage('org-b', 1).map((c) => c.channelId));
@@ -132,7 +175,13 @@ void main() {
     final pending = notifier.loadMore();
 
     await notifier.refresh();
-    repository.held['org-a/2']!.complete([_conversation('late-page')]);
+    repository.held['org-a/2']!.complete(
+      DmConversationsPage(
+        conversations: [_conversation('late-page')],
+        currentPage: 2,
+        totalPages: 2,
+      ),
+    );
     await pending;
 
     expect(listedIds(), _fullPage('org-a', 1).map((c) => c.channelId));
@@ -147,12 +196,17 @@ class _ListDmRepository implements DmRepository {
   final List<DmConversation> conversations;
 
   @override
-  Future<List<DmConversation>> getConversations({
+  Future<DmConversationsPage> getConversations({
     required String orgId,
     int page = 1,
     bool recentDm = false,
     String? search,
-  }) async => conversations;
+  }) async => DmConversationsPage(
+    conversations: conversations,
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: conversations.length,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -252,5 +306,56 @@ void _noFakeDmTests() {
         expect(conversations.first.username, 'Test User');
       },
     );
+
+    test(
+      'short page does not stop pagination when server reports more pages exist',
+      () async {
+        final repo = _ShortPageDmRepository();
+        final testContainer = ProviderContainer(
+          overrides: [
+            currentOrgIdProvider.overrideWithValue('org-test'),
+            dmRepositoryProvider.overrideWithValue(repo),
+          ],
+        );
+        addTearDown(testContainer.dispose);
+
+        final initial = await testContainer.read(dmListProvider.future);
+        expect(initial.length, 19);
+        expect(testContainer.read(dmListProvider.notifier).hasMore, isTrue);
+
+        await testContainer.read(dmListProvider.notifier).loadMore();
+        final updated = testContainer.read(dmListProvider).value!;
+        expect(updated.length, 24);
+        expect(testContainer.read(dmListProvider.notifier).hasMore, isFalse);
+      },
+    );
   });
+}
+
+class _ShortPageDmRepository implements DmRepository {
+  @override
+  Future<DmConversationsPage> getConversations({
+    required String orgId,
+    int page = 1,
+    bool recentDm = false,
+    String? search,
+  }) async {
+    if (page == 1) {
+      return DmConversationsPage(
+        conversations: [for (var i = 0; i < 19; i++) _conversation('p1-$i')],
+        currentPage: 1,
+        totalPages: 2,
+        totalItems: 24,
+      );
+    }
+    return DmConversationsPage(
+      conversations: [for (var i = 0; i < 5; i++) _conversation('p2-$i')],
+      currentPage: 2,
+      totalPages: 2,
+      totalItems: 24,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

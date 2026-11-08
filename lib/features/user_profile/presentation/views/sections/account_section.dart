@@ -89,6 +89,8 @@ class AccountSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 48),
+        const LaunchAtLoginTile(),
+        const SizedBox(height: 48),
         AppButton.outlined(
           label: 'Delete my account',
           expand: false,

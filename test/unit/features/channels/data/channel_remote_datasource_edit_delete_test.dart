@@ -15,7 +15,13 @@ void main() {
 
   setUp(() {
     api = MockApiBaseService();
-    datasource = ChannelRemoteDataSourceImpl(apiBaseService: api);
+    datasource = ChannelRemoteDataSourceImpl(
+      apiBaseService: api,
+      config: AppConfig(
+        apiBaseUrl: 'https://example.test',
+        usesMockData: false,
+      ),
+    );
   });
 
   group('editing and deleting channel messages (Ziki #2839)', () {

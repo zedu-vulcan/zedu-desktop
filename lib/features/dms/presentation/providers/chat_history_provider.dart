@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show File;
 
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
@@ -295,11 +294,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
       final repository = ref.read(dmRepositoryProvider);
       final page = await repository.getMessages(channelId, page: 1);
       if (_isDisposed) return null;
-      return findDeliveredCopy(
-        page,
-        send: send,
-        senderId: _currentUserId,
-      );
+      return findDeliveredCopy(page, send: send, senderId: _currentUserId);
     } catch (_) {
       return null;
     }
@@ -404,16 +399,23 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
   /// Loads every remaining page, for views that need the whole conversation
   /// (such as its files). Waits for a load already in flight, and stops after
-  /// [maxPages] pages or when a page fails, so it can't loop forever.
+  /// [maxPages] pages, when a page fails, or once this notifier is disposed.
+  ///
+  /// A load interrupted by dispose() never clears [isLoading] (its finally
+  /// skips the update on a disposed notifier), so the wait checks for
+  /// disposal too; otherwise a caller such as the conversation files dialog
+  /// would keep waking every 50 ms forever after the conversation closed
+  /// (#2939).
   Future<void> loadAll({int maxPages = 50}) async {
     for (var i = 0; i < maxPages && hasMore; i++) {
       while (isLoading) {
+        if (_isDisposed) return;
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
-      if (!hasMore) break;
+      if (_isDisposed || !hasMore) return;
       final before = page;
       await loadMore();
-      if (page == before) break; // the page failed to load
+      if (_isDisposed || page == before) return; // closed, or the page failed
     }
   }
 
@@ -575,11 +577,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
     final now = DateTime.now();
     _outboundSends[messageId] = record == null
-        ? OutboundSend.starting(
-            clientId: messageId,
-            content: content,
-            at: now,
-          )
+        ? OutboundSend.starting(clientId: messageId, content: content, at: now)
         : record.withAnotherAttempt(now);
 
     failedMsg['status'] = 'sending';
@@ -766,19 +764,20 @@ class ChatHistoryNotifier extends ChangeNotifier {
       }
       return m;
     }).toList();
-    if (editingMessageId == messageId) {
-      editingMessageId = null;
-    }
     notifyListeners();
 
     _editsInFlight.add(messageId);
     try {
       final repository = ref.read(dmRepositoryProvider);
       await repository.editMessage(
-        messageId,
+        channelId,
         content: newContent,
         threadId: threadId,
       );
+      // Only clear editing state after successful save
+      if (editingMessageId == messageId) {
+        editingMessageId = null;
+      }
     } catch (e, st) {
       AppLogger.e(
         'Failed to save edit for message $messageId in channel $channelId',
@@ -806,3 +805,24 @@ final chatHistoryProvider = ChangeNotifierProvider.autoDispose
     .family<ChatHistoryNotifier, String>(
       (ref, channelId) => ChatHistoryNotifier(channelId, ref),
     );
+
+// Polling payloads contain nested maps and arrays. Map identity must not turn
+// an unchanged server response into a chat refresh.
+bool _sameJsonValue(Object? left, Object? right) {
+  if (identical(left, right)) return true;
+  if (left is Map && right is Map) {
+    return left.length == right.length &&
+        left.keys.every(
+          (key) =>
+              right.containsKey(key) && _sameJsonValue(left[key], right[key]),
+        );
+  }
+  if (left is List && right is List) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (!_sameJsonValue(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  return left == right;
+}

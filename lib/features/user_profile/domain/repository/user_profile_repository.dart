@@ -14,7 +14,10 @@ abstract interface class UserProfileRepository {
     required NotificationPreferences preferences,
   });
 
-  Future<Result<List<SecuritySession>>> getSecuritySessions();
+  /// The signed-in user's sessions ([userId] is their user id).
+  Future<Result<List<SecuritySession>>> getSecuritySessions({
+    required String userId,
+  });
   Future<Result<void>> changePassword({
     required String currentPassword,
     required String newPassword,

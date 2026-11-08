@@ -35,7 +35,9 @@ void main() {
     Future<Result<T>> failed<T>() async =>
         Failure<T>(const ApiFailure(message: 'unavailable'));
     when(() => repo.getAccount()).thenAnswer((_) => failed());
-    when(() => repo.getSecuritySessions()).thenAnswer((_) => failed());
+    when(
+      () => repo.getSecuritySessions(userId: any(named: 'userId')),
+    ).thenAnswer((_) => failed());
     when(
       () => repo.getRolesAndPermissions(orgId: any(named: 'orgId')),
     ).thenAnswer((_) => failed());

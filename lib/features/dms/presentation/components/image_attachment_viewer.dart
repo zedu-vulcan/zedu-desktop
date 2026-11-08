@@ -2,20 +2,26 @@ import 'dart:io';
 
 import 'package:zedu/core/core.dart';
 
-/// Downloads [url] and saves it as [fileName]. Returns whether the file was
-/// saved, so tests can replace the platform picker and network call.
-typedef ImageDownloadCallback =
-    Future<bool> Function(String url, String fileName);
+/// Asks where to save [fileName]. Returns the chosen path, or null when the
+/// user cancels, so tests can replace the platform save dialog.
+typedef ImageSavePathPicker = Future<String?> Function(String fileName);
+
+/// Downloads [url] and writes it to [path]. Returns whether the file was
+/// saved, so tests can replace the network call and file write.
+typedef ImageDownloadCallback = Future<bool> Function(String url, String path);
 
 /// Full-screen viewer for an image attachment.
 ///
 /// The attachment is shown over a dark backdrop and can be zoomed, rotated and
-/// saved. Pass [onDownload] in tests to avoid opening the platform save dialog.
+/// saved. Saving asks for the path first and only then downloads the image.
+/// Pass [onPickSavePath] and [onDownload] in tests to avoid opening the
+/// platform save dialog or hitting the network.
 class ImageAttachmentViewer extends StatefulWidget {
   const ImageAttachmentViewer({
     super.key,
     required this.imageUrl,
     required this.fileName,
+    this.onPickSavePath,
     this.onDownload,
   });
 
@@ -24,6 +30,8 @@ class ImageAttachmentViewer extends StatefulWidget {
 
   /// Name used for the save dialog and the viewer title.
   final String fileName;
+
+  final ImageSavePathPicker? onPickSavePath;
 
   final ImageDownloadCallback? onDownload;
 
@@ -89,10 +97,20 @@ class _ImageAttachmentViewerState extends State<ImageAttachmentViewer> {
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
+    final pickPath = widget.onPickSavePath ?? _pickSavePath;
     final download = widget.onDownload ?? _download;
-    final saved = await download(widget.imageUrl, widget.fileName);
+    // Ask for the path first so the dialog opens straight away; null means
+    // the user cancelled, which is not an error.
+    bool? saved;
+    try {
+      final path = await pickPath(widget.fileName);
+      if (path != null) saved = await download(widget.imageUrl, path);
+    } catch (_) {
+      saved = false;
+    }
     if (!mounted) return;
     setState(() => _saving = false);
+    if (saved == null) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -106,16 +124,18 @@ class _ImageAttachmentViewerState extends State<ImageAttachmentViewer> {
       );
   }
 
-  Future<bool> _download(String url, String fileName) async {
+  Future<String?> _pickSavePath(String fileName) {
+    return FilePicker.saveFile(
+      dialogTitle: 'Save image',
+      fileName: fileName,
+      type: FileType.image,
+    );
+  }
+
+  Future<bool> _download(String url, String path) async {
     try {
       final bytes = await _readBytes(url);
       if (bytes.isEmpty) return false;
-      final path = await FilePicker.saveFile(
-        dialogTitle: 'Save image',
-        fileName: fileName,
-        type: FileType.image,
-      );
-      if (path == null) return false;
       await File(path).writeAsBytes(bytes);
       return true;
     } catch (_) {

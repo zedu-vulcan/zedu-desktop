@@ -23,7 +23,7 @@ class PeopleRepositoryImpl implements PeopleRepository {
     } on ApiFailure catch (e) {
       return Failure(e);
     } catch (e) {
-      return Failure(ApiFailure(message: e.toString()));
+      return Failure(ApiFailure.unknown(e));
     }
   }
 }

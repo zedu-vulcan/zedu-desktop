@@ -71,7 +71,9 @@ void main() {
       locator.registerSingleton<SecureStorageService>(storage);
 
       when(() => repo.getAccount()).thenAnswer((_) => _failed());
-      when(() => repo.getSecuritySessions()).thenAnswer((_) => _failed());
+      when(
+        () => repo.getSecuritySessions(userId: any(named: 'userId')),
+      ).thenAnswer((_) => _failed());
       when(
         () => repo.getRolesAndPermissions(orgId: any(named: 'orgId')),
       ).thenAnswer((_) => _failed());
@@ -305,7 +307,9 @@ void main() {
 
       when(() => storage.readData(any())).thenAnswer((_) async => null);
       when(() => repo.getAccount()).thenAnswer((_) => _failed());
-      when(() => repo.getSecuritySessions()).thenAnswer((_) => _failed());
+      when(
+        () => repo.getSecuritySessions(userId: any(named: 'userId')),
+      ).thenAnswer((_) => _failed());
       when(
         () => repo.getRolesAndPermissions(orgId: any(named: 'orgId')),
       ).thenAnswer((_) => _failed());

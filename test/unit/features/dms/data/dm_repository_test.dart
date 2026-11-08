@@ -249,4 +249,84 @@ void main() {
       ).called(1);
     });
   });
+
+  group('DmRepository.getConversations', () {
+    test(
+      'parses pagination data when present and determines hasMore',
+      () async {
+        when(
+          () => api.get<Map<String, dynamic>>(
+            path: '/organisations/org-1/dms',
+            queryParameters: any(named: 'queryParameters'),
+          ),
+        ).thenAnswer(
+          (_) async => const ApiResponseModel<Map<String, dynamic>>(
+            statusCode: 200,
+            data: {
+              'data': [
+                {
+                  'channel_id': 'ch-1',
+                  'username': 'Alice',
+                  'participant_id': 'u-1',
+                  'preview_message': 'Hey',
+                  'unread_count': 0,
+                },
+              ],
+              'pagination': {
+                'current_page': 1,
+                'total_pages': 3,
+                'page_size': 20,
+                'total_items': 45,
+              },
+            },
+          ),
+        );
+
+        final page = await repository.getConversations(orgId: 'org-1', page: 1);
+
+        expect(page.conversations.length, 1);
+        expect(page.currentPage, 1);
+        expect(page.totalPages, 3);
+        expect(page.totalItems, 45);
+        expect(page.hasMore, isTrue);
+      },
+    );
+
+    test(
+      'determines hasMore is false when on last page with short results',
+      () async {
+        when(
+          () => api.get<Map<String, dynamic>>(
+            path: '/organisations/org-1/dms',
+            queryParameters: any(named: 'queryParameters'),
+          ),
+        ).thenAnswer(
+          (_) async => const ApiResponseModel<Map<String, dynamic>>(
+            statusCode: 200,
+            data: {
+              'data': [
+                {
+                  'channel_id': 'ch-2',
+                  'username': 'Bob',
+                  'participant_id': 'u-2',
+                  'preview_message': 'Hello',
+                  'unread_count': 0,
+                },
+              ],
+              'pagination': {
+                'current_page': 3,
+                'total_pages': 3,
+                'page_size': 20,
+                'total_items': 41,
+              },
+            },
+          ),
+        );
+
+        final page = await repository.getConversations(orgId: 'org-1', page: 3);
+
+        expect(page.hasMore, isFalse);
+      },
+    );
+  });
 }

@@ -9,6 +9,8 @@ import 'package:zedu/features/features.dart';
 
 import 'composer/composer.dart';
 
+const _voiceLogTag = 'dm-voice';
+
 class DmMessageComposer extends ConsumerStatefulWidget {
   final String recipientName;
   final String? hintText;
@@ -75,6 +77,9 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   List<XFile> _pendingFiles = [];
 
   List<DmParticipant> _mentionSuggestions = [];
+
+  /// The @mention suggestion Enter or Tab inserts; Up and Down move it.
+  int _mentionIndex = 0;
   String _mentionQuery = '';
 
   /// Draft key this composer instance is currently bound to.
@@ -350,8 +355,28 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
       return p.username.toLowerCase().contains(query) ||
           p.email.toLowerCase().contains(query);
     }).toList();
-    setState(() => _mentionSuggestions = suggestions);
+    final sameList =
+        suggestions.length == _mentionSuggestions.length &&
+        Iterable<int>.generate(
+          suggestions.length,
+        ).every((i) => suggestions[i].userId == _mentionSuggestions[i].userId);
+    setState(() {
+      _mentionSuggestions = suggestions;
+      if (!sameList) _mentionIndex = 0;
+    });
   }
+
+  /// Moves the highlighted @mention suggestion by [delta], wrapping around.
+  void _moveMentionHighlight(int delta) {
+    final count = _mentionSuggestions.length;
+    setState(() => _mentionIndex = (_mentionIndex + delta) % count);
+  }
+
+  DmParticipant get _highlightedMention =>
+      _mentionSuggestions[_mentionIndex.clamp(
+        0,
+        _mentionSuggestions.length - 1,
+      )];
 
   void _insertMention(DmParticipant participant) {
     final text = _controller.text;
@@ -410,9 +435,14 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     }
 
     if (isEdit) {
-      ref
-          .read(chatHistoryProvider(widget.channelId))
-          .saveEdit(_editingMessageId!, text);
+      if (widget.isChannel) {
+        // A channel message is a thread: the DM edit route can't change it.
+        _saveChannelEdit(_editingMessageId!, text);
+      } else {
+        ref
+            .read(chatHistoryProvider(widget.channelId))
+            .saveEdit(_editingMessageId!, text);
+      }
       // An edit sends nothing new: the unsent reply and its draft come back,
       // and a waiting voice note or file is kept.
       _exitEditMode();
@@ -449,8 +479,56 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
+  /// The signed-in user's latest message in this channel, which the Up arrow
+  /// edits. The channel history is newest first and only holds channel
+  /// messages, which carry the thread id the edit route needs.
+  ChannelMessage? _lastOwnChannelMessage() {
+    final me = ref.read(chatHistoryProvider(widget.channelId)).currentUserId;
+    final messages = ref
+        .read(channelHistoryProvider(widget.channelId))
+        .value
+        ?.messages;
+    if (messages == null) return null;
+    for (final message in messages) {
+      if (message.userId == me &&
+          message.threadId != null &&
+          message.text.isNotEmpty) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  /// Saves an edited channel message through the thread route (Ziki #3440)
+  /// and reloads the channel's messages.
+  Future<void> _saveChannelEdit(String threadId, String text) async {
+    final channelId = widget.channelId;
+    final result = await ref
+        .read(channelRepositoryProvider)
+        .editChannelMessage(
+          channelId: channelId,
+          threadId: threadId,
+          content: text,
+        );
+    if (!mounted) return;
+    switch (result) {
+      case Success():
+        ref.invalidate(channelHistoryProvider(channelId));
+      case Failure():
+        AppToastService.show(
+          context,
+          type: AppToastType.error,
+          message: "Couldn't edit the message. Please try again.",
+        );
+    }
+  }
+
   /// Puts the given message in the composer for editing, the same way the
   /// Up-arrow shortcut does. Called from the message menu's "Edit message".
+  /// Moves the cursor back into the message box, for example after the
+  /// conversation search panel closes.
+  void focusInput() => _focusNode.requestFocus();
+
   void enterEditMode(String messageId, String content) =>
       _enterEditMode(messageId, content);
 
@@ -503,6 +581,32 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
       return KeyEventResult.ignored;
     }
 
+    // With the @mention list open, Up and Down move the highlight and Tab
+    // inserts it, like the web composer (Ziki #3437).
+    if (_mentionSuggestions.isNotEmpty && modifiers.isEmpty) {
+      if (key == LogicalKeyboardKey.arrowDown) {
+        _moveMentionHighlight(1);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _moveMentionHighlight(-1);
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.tab) {
+        _insertMention(_highlightedMention);
+        return KeyEventResult.handled;
+      }
+    }
+
+    if (key == LogicalKeyboardKey.keyE &&
+        HardwareKeyboard.instance.isShiftPressed &&
+        (HardwareKeyboard.instance.isControlPressed ||
+            HardwareKeyboard.instance.isMetaPressed) &&
+        !HardwareKeyboard.instance.isAltPressed) {
+      _toggleEmojiPicker();
+      return KeyEventResult.handled;
+    }
+
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
       final hasModifier =
@@ -517,10 +621,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           !_controller.value.composing.isCollapsed) {
         return KeyEventResult.ignored;
       }
-      // With the @mention list open, plain Enter picks the first suggestion
-      // instead of sending the half-typed mention.
+      // With the @mention list open, plain Enter picks the highlighted
+      // suggestion instead of sending the half-typed mention.
       if (!hasModifier && _mentionSuggestions.isNotEmpty) {
-        _insertMention(_mentionSuggestions.first);
+        _insertMention(_highlightedMention);
         return KeyEventResult.handled;
       }
       // Plain Enter, Ctrl+Enter and Cmd+Enter all share the send path, which
@@ -544,6 +648,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     }
 
     if (key == LogicalKeyboardKey.escape) {
+      if (_showEmojiPicker) {
+        _closeEmojiPicker();
+        return KeyEventResult.handled;
+      }
       if (_mentionSuggestions.isNotEmpty) {
         setState(() => _mentionSuggestions = []);
         return KeyEventResult.handled;
@@ -559,12 +667,20 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     }
 
     if (key == LogicalKeyboardKey.arrowUp && _controller.text.isEmpty) {
-      final history = ref.read(chatHistoryProvider(widget.channelId));
-      final lastId = history.lastSentMessageId;
-      final lastContent = history.lastSentMessageContent;
-      if (lastId != null && lastContent != null) {
-        _enterEditMode(lastId, lastContent);
-        return KeyEventResult.handled;
+      if (widget.isChannel) {
+        final own = _lastOwnChannelMessage();
+        if (own != null) {
+          _enterEditMode(own.threadId!, own.text);
+          return KeyEventResult.handled;
+        }
+      } else {
+        final history = ref.read(chatHistoryProvider(widget.channelId));
+        final lastId = history.lastSentMessageId;
+        final lastContent = history.lastSentMessageContent;
+        if (lastId != null && lastContent != null) {
+          _enterEditMode(lastId, lastContent);
+          return KeyEventResult.handled;
+        }
       }
     }
 
@@ -578,12 +694,15 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     return KeyEventResult.ignored;
   }
 
+  // An unfocused composer has no selection; its markers still go at the end.
+  TextSelection get _selectionOrEnd => _controller.selection.isValid
+      ? _controller.selection
+      : TextSelection.collapsed(offset: _controller.text.length);
+
   void _wrapSelection(String before, [String? after]) {
     after ??= before;
     final text = _controller.text;
-    final sel = _controller.selection;
-
-    if (!sel.isValid) return;
+    final sel = _selectionOrEnd;
 
     if (sel.isCollapsed &&
         before == after &&
@@ -652,8 +771,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
   void _insertQuote() {
     final text = _controller.text;
-    final sel = _controller.selection;
-    if (!sel.isValid) return;
+    final sel = _selectionOrEnd;
     if (sel.isCollapsed) {
       // "> " only quotes at the start of a line, so a bare caret prefixes the
       // current line and the caret stays on the same character.
@@ -739,6 +857,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     setState(() => _showEmojiPicker = !_showEmojiPicker);
   }
 
+  void _closeEmojiPicker() {
+    setState(() => _showEmojiPicker = false);
+    _focusNode.requestFocus();
+  }
+
   void _insertEmoji(String emoji) {
     final text = _controller.text;
     final sel = _controller.selection;
@@ -805,10 +928,18 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         _isRecording = true;
         _recordSeconds = 0;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       _activeRecordingPath = null;
       if (mounted) setState(() => _isRecording = false);
-      _showVoiceError('Could not start recording: $error');
+      AppLogger.w(
+        'Could not start the voice recording',
+        tag: _voiceLogTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      _showVoiceError(
+        'Could not start recording. Check your microphone and try again.',
+      );
     } finally {
       _isStarting = false;
     }
@@ -834,9 +965,15 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           );
         }
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (mounted) setState(() => _isRecording = false);
-      _showVoiceError('Could not save the recording: $error');
+      AppLogger.w(
+        'Could not save the voice recording',
+        tag: _voiceLogTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      _showVoiceError('Could not save the recording. Please try again.');
     }
   }
 
@@ -869,8 +1006,14 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         await player.play(DeviceFileSource(note.path));
         if (mounted) setState(() => _isPreviewPlaying = true);
       }
-    } catch (error) {
-      _showVoiceError('Could not play the recording: $error');
+    } catch (error, stackTrace) {
+      AppLogger.w(
+        'Could not play back the voice recording',
+        tag: _voiceLogTag,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      _showVoiceError('Could not play the recording.');
     }
   }
 
@@ -1019,6 +1162,9 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
           }
         }
         final length = await file.length();
+        // The composer can be disposed (e.g. the user switched conversation)
+        // while file sizes are still being read.
+        if (!mounted) return;
         if (length > 20 * 1024 * 1024) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1040,6 +1186,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         }
       }
     }
+    if (!mounted) return;
     setState(() {
       _pendingFiles.addAll(validFiles);
     });
@@ -1199,6 +1346,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
             suggestions: _mentionSuggestions,
             query: _mentionQuery,
             colors: colors,
+            selectedIndex: _mentionIndex,
             onSelect: _insertMention,
           ),
 
@@ -1209,7 +1357,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
               child: DmEmojiPicker(
                 onEmojiSelected: _insertEmoji,
-                onClose: () => setState(() => _showEmojiPicker = false),
+                onClose: _closeEmojiPicker,
               ),
             ),
           ),
@@ -1327,7 +1475,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                     child: TextField(
                       controller: _controller,
                       focusNode: _focusNode,
-                      maxLines: null,
+                      maxLines: 8,
                       minLines: 1,
                       decoration: InputDecoration(
                         hintText: _isEditMode
@@ -1357,7 +1505,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
                     children: [
                       ToolbarButton(
                         icon: Icons.emoji_emotions_outlined,
-                        tooltip: 'Emoji',
+                        tooltip: 'Emoji (Ctrl/Cmd+Shift+E)',
                         onTap: _toggleEmojiPicker,
                         colors: colors,
                         isActive: _showEmojiPicker,

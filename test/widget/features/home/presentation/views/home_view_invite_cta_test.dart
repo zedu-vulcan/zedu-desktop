@@ -78,6 +78,14 @@ class _FakeChannelNotifier extends ChannelNotifier {
   ];
 }
 
+class _FakeChannelHistoryNotifier extends ChannelHistoryNotifier {
+  _FakeChannelHistoryNotifier(super.channelId);
+
+  @override
+  Future<ChannelHistoryState> build() async =>
+      const ChannelHistoryState(messages: []);
+}
+
 class _FakeUserProfileNotifier extends UserProfileNotifier {
   final invitedEmails = <String>[];
   int generatedLinkCount = 0;
@@ -123,9 +131,7 @@ Widget _buildHomeView(_FakeUserProfileNotifier userProfileNotifier) {
       authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
       creditsNotifierProvider.overrideWith(_FakeCreditsNotifier.new),
       channelProvider.overrideWith(_FakeChannelNotifier.new),
-      channelHistoryProvider.overrideWith(
-        (ref, channelId) async => <ChannelMessage>[],
-      ),
+      channelHistoryProvider.overrideWith2(_FakeChannelHistoryNotifier.new),
       workspaceProvider.overrideWith(_FakeWorkspaceNotifier.new),
       userProfileNotifierProvider.overrideWith(() => userProfileNotifier),
     ],

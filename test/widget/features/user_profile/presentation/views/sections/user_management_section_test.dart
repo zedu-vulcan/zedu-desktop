@@ -36,6 +36,18 @@ List<TeamMember> createMembers(int count) {
 }
 
 void main() {
+  testWidgets('offers bulk invitation alongside the existing member table', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(buildUnderTest(createMembers(2)));
+    await tester.pumpAndSettle();
+    expect(find.text('Invite multiple people'), findsOneWidget);
+    expect(find.text('Members'), findsOneWidget);
+    expect(find.text('Invites'), findsOneWidget);
+  });
+
   group('UserManagementSection role filter (Ziki #2389)', () {
     TeamMember member(String email, String role) => TeamMember(
       id: email,
@@ -396,6 +408,108 @@ void main() {
 
         expect(find.text('3 of 3'), findsOneWidget);
         expect(find.text('member20@example.com'), findsOneWidget);
+      },
+    );
+  });
+  group('UserManagementSection table layout and overflow (#204)', () {
+    testWidgets('renders long email, long role, and long date without overflow', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final members = [
+        const TeamMember(
+          id: 'long-member-1',
+          email:
+              'verylongemailaddressthatcouldcauseoverflow@organizationdomain.com',
+          role: '019fcd17-4b53-72d3-bac3-4586dc029b5a',
+          dateJoined: 'November 28, 2026, 11:59 PM',
+          status: TeamMemberStatus.active,
+        ),
+      ];
+
+      await tester.pumpWidget(buildUnderTest(members));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.text(
+          'verylongemailaddressthatcouldcauseoverflow@organizationdomain.com',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('019fcd17-4b53-72d3-bac3-4586dc029b5a'), findsOneWidget);
+      expect(find.text('November 28, 2026, 11:59 PM'), findsOneWidget);
+    });
+
+    testWidgets('renders without overflow on narrow window dimensions', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(buildUnderTest(createMembers(5)));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('member0@example.com'), findsOneWidget);
+    });
+
+    testWidgets(
+      'search and filter toolbar stacks responsively at reduced window widths without overflow',
+      (tester) async {
+        // Window width where fixed-width 300px + dropdown previously threw 35px overflow
+        tester.view.physicalSize = const Size(440, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(buildUnderTest(createMembers(3)));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(TextField), findsOneWidget);
+        expect(find.text('All Roles'), findsOneWidget);
+
+        // Verify search input still functions when stacked
+        await tester.enterText(find.byType(TextField), 'member1');
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('member1@example.com'), findsOneWidget);
+        expect(find.text('member0@example.com'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'table columns and action buttons remain accessible via horizontal scroll at reduced widths',
+      (tester) async {
+        tester.view.physicalSize = const Size(500, 700);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await tester.pumpWidget(buildUnderTest(createMembers(2)));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+
+        // Check horizontal scrollbar is present
+        expect(find.byType(Scrollbar), findsOneWidget);
+
+        // Scroll horizontally to ensure the rightmost Actions column is fully reached
+        final scrollableFinder = find.byType(SingleChildScrollView).last;
+        await tester.drag(scrollableFinder, const Offset(-300, 0));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byIcon(Icons.edit_outlined), findsWidgets);
+        expect(find.byIcon(Icons.delete_outline), findsWidgets);
       },
     );
   });

@@ -60,7 +60,7 @@ void main() {
       () => repo.getNotificationPreferences(orgId: any(named: 'orgId')),
     ).thenAnswer((_) async => Success(NotificationPreferences.empty()));
     when(
-      () => repo.getSecuritySessions(),
+      () => repo.getSecuritySessions(userId: any(named: 'userId')),
     ).thenAnswer((_) async => const Success(<SecuritySession>[]));
     when(() => repo.getOrganization(orgId: any(named: 'orgId'))).thenAnswer(
       (_) async => const Success(

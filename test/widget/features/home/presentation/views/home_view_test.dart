@@ -20,16 +20,46 @@ class _TopicChannelNotifier extends ChannelNotifier {
   ];
 }
 
+class _MemberCountChannelNotifier extends ChannelNotifier {
+  @override
+  Future<List<Channel>> build() async => [
+    _channel('general').copyWith(membersCount: 12),
+    _channel('random').copyWith(membersCount: 1),
+  ];
+}
+
 class _EmptyChannelRepository extends Mock implements ChannelRepository {
   @override
-  Future<Result<List<ChannelMessage>>> fetchChannelMessages(String id) async =>
-      const Success(<ChannelMessage>[]);
+  Future<Result<ChannelMessagePage>> fetchChannelMessages(
+    String id, {
+    int page = 1,
+  }) async => const Success(ChannelMessagePage(messages: [], hasMore: false));
 
   @override
   Future<Result<List<DmParticipant>>> fetchChannelMembers(String id) async =>
       Success([
         DmParticipant(userId: 'u1', username: 'ada', email: 'ada@zedu.chat'),
       ]);
+}
+
+class _LinksChannelRepository extends _EmptyChannelRepository {
+  @override
+  Future<Result<ChannelMessagePage>> fetchChannelMessages(
+    String id, {
+    int page = 1,
+  }) async => Success(
+    ChannelMessagePage(
+      messages: [
+        ChannelMessage(
+          senderName: 'Ada',
+          text: 'Roadmap',
+          rawContent: '<a href="https://zedu.chat/roadmap">Roadmap</a>',
+          createdAt: DateTime.utc(2026, 11, 1, 9),
+        ),
+      ],
+      hasMore: false,
+    ),
+  );
 }
 
 /// Records leave calls and answers with [leaveResult].
@@ -62,6 +92,26 @@ class _ArchivingChannelRepository extends _EmptyChannelRepository {
   @override
   Future<Result<List<Channel>>> fetchArchivedChannels(String orgId) async =>
       const Success(<Channel>[]);
+}
+
+/// Keeps every export running, so the export dialog stays on "Preparing".
+class _ExportingChannelRepository extends _EmptyChannelRepository {
+  final exported = <String>[];
+
+  @override
+  Future<Result<ChannelExport>> startChannelExport(String channelId) async {
+    exported.add(channelId);
+    return const Success(
+      ChannelExport(id: 'e1', status: ChannelExportStatus.pending),
+    );
+  }
+
+  @override
+  Future<Result<ChannelExport>> fetchChannelExportStatus(
+    String channelId,
+  ) async => const Success(
+    ChannelExport(id: 'e1', status: ChannelExportStatus.pending),
+  );
 }
 
 class FakeSecureStorageService extends Fake implements SecureStorageService {
@@ -181,6 +231,27 @@ void main() {
       expect(find.byKey(const ValueKey('channel_header_topic')), findsNothing);
     });
 
+    testWidgets('shows the channel member count in the header (#3062)', (
+      tester,
+    ) async {
+      await pumpSidebarAndChat(
+        tester,
+        channels: _MemberCountChannelNotifier.new,
+      );
+
+      expect(
+        find.byKey(const ValueKey('channel_header_member_count')),
+        findsOneWidget,
+      );
+      expect(find.text('12 members'), findsOneWidget);
+
+      await tester.tap(find.text('random'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 member'), findsOneWidget);
+      expect(find.text('12 members'), findsNothing);
+    });
+
     testWidgets('clicking a sidebar channel opens it in the chat area', (
       tester,
     ) async {
@@ -286,6 +357,21 @@ void main() {
       expect(find.text('# general'), findsOneWidget);
       expect(find.text('You left #random'), findsOneWidget);
       await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('the channel menu opens links shared in that channel', (
+      tester,
+    ) async {
+      await pumpSidebarAndChat(tester, repository: _LinksChannelRepository());
+
+      await tester.tap(find.byKey(const ValueKey('channel-header-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('View links'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('#general links'), findsOneWidget);
+      expect(find.text('https://zedu.chat/roadmap'), findsOneWidget);
+      expect(find.textContaining('Ada ·'), findsOneWidget);
     });
 
     testWidgets('cancelling the dialog keeps the channel', (tester) async {
@@ -423,6 +509,27 @@ void main() {
         await tester.pump(const Duration(seconds: 5));
       },
     );
+
+    testWidgets('the header menu exports the channel history (Ziki #2629)', (
+      tester,
+    ) async {
+      final repository = _ExportingChannelRepository();
+      await pumpSidebarAndChat(tester, repository: repository);
+      await tester.tap(find.text('random'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('channel-header-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Export history'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Export #random'), findsOneWidget);
+      expect(repository.exported, ['channel-random']);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+    });
   });
 
   group('ResizableSidebar', () {

@@ -1,7 +1,7 @@
 export 'settings_shortcut.dart';
+export 'sidebar_conversation_cycle.dart';
 export 'user_menu_button.dart';
 export 'user_menu_dialog.dart';
-export 'update_status_dialog.dart';
 export 'set_status_dialog.dart';
 export 'emoji_picker_dialog.dart';
 export 'app_sidebar_rail.dart';

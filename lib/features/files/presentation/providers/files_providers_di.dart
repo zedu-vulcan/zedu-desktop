@@ -2,7 +2,10 @@ import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 final filesRemoteDataSourceProvider = Provider<FilesRemoteDataSource>(
-  (ref) => FilesRemoteDataSourceImpl(apiBaseService: locator<ApiBaseService>()),
+  (ref) => FilesRemoteDataSourceImpl(
+    apiBaseService: locator<ApiBaseService>(),
+    config: locator<AppConfig>(),
+  ),
 );
 
 final filesRepositoryProvider = Provider<FilesRepository>(
@@ -93,6 +96,19 @@ final fileDetailsProvider = FutureProvider.autoDispose
       final result = await ref
           .watch(filesRepositoryProvider)
           .fetchFileDetails(fileId);
+      return switch (result) {
+        Success(:final value) => value,
+        Failure(:final error) => throw error,
+      };
+    });
+
+/// What the server knows about a file beyond its list entry, such as the
+/// channels it was shared in. The list endpoint leaves that out.
+final fileInfoProvider = FutureProvider.autoDispose
+    .family<WorkspaceFileInfo, String>((ref, fileId) async {
+      final result = await ref
+          .watch(filesRepositoryProvider)
+          .fetchFileInfo(fileId);
       return switch (result) {
         Success(:final value) => value,
         Failure(:final error) => throw error,

@@ -1,3 +1,5 @@
+import 'package:zedu/features/features.dart';
+
 /// A file in the workspace's Files area.
 class WorkspaceFile {
   final String id;
@@ -41,10 +43,10 @@ class WorkspaceFile {
     this.accessType = '',
   });
 
-  static const _imageTypes = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'};
-
-  bool get isImage =>
-      _imageTypes.contains(fileType) || mimeType.startsWith('image/');
+  bool get isImage => switch (FilePreviewKind.of(this)) {
+    FilePreviewKind.image || FilePreviewKind.svg => true,
+    _ => false,
+  };
 
   /// When the file last changed, falling back to when it was uploaded.
   DateTime? get modifiedAt => updatedAt ?? createdAt;

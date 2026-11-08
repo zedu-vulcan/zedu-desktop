@@ -539,6 +539,101 @@ void main() {
     });
   });
 
+  group('DmMessageComposer toolbar on a composer that was never focused', () {
+    composerTest('Bold inserts its markers with the cursor between', (
+      tester,
+      field,
+    ) async {
+      expect(field.controller!.selection.isValid, isFalse);
+
+      await tester.tap(find.byTooltip('Bold (Ctrl+B)'));
+      await tester.pump();
+
+      expect(field.controller!.text, '****');
+      expect(
+        field.controller!.selection,
+        const TextSelection.collapsed(offset: 2),
+      );
+    });
+
+    composerTest('Link inserts the link stub with the cursor in the label', (
+      tester,
+      field,
+    ) async {
+      await tester.tap(find.byTooltip('Link'));
+      await tester.pump();
+
+      expect(field.controller!.text, '[](url)');
+      expect(
+        field.controller!.selection,
+        const TextSelection.collapsed(offset: 1),
+      );
+    });
+
+    composerTest('Block quote starts a quote line', (tester, field) async {
+      await tester.tap(find.byTooltip('Block quote'));
+      await tester.pump();
+
+      expect(field.controller!.text, '> ');
+    });
+
+    composerTest('Italic focuses the field so typing continues there', (
+      tester,
+      field,
+    ) async {
+      await tester.tap(find.byTooltip('Italic (Ctrl+I)'));
+      await tester.pump();
+
+      expect(field.controller!.text, '**');
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+    });
+
+    composerTest('appends after draft text instead of doing nothing', (
+      tester,
+      field,
+    ) async {
+      await tester.enterText(find.byType(TextField), 'hello');
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Inline code'));
+      await tester.pump();
+
+      expect(field.controller!.text, 'hello``');
+      expect(
+        field.controller!.selection,
+        const TextSelection.collapsed(offset: 6),
+      );
+    });
+
+    composerTest('still wraps exactly the selected range', (
+      tester,
+      field,
+    ) async {
+      await tester.tap(find.byType(TextField));
+      await tester.enterText(find.byType(TextField), 'hello');
+      field.controller!.selection = const TextSelection(
+        baseOffset: 0,
+        extentOffset: 5,
+      );
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Strikethrough'));
+      await tester.pump();
+
+      expect(field.controller!.text, '~~hello~~');
+      expect(
+        field.controller!.selection,
+        const TextSelection(baseOffset: 2, extentOffset: 7),
+      );
+    });
+  });
+
   group('DmMessageComposer drafts with no channel yet', () {
     testWidgets('each person keeps their own draft', (tester) async {
       final draftKey = ValueNotifier('new-dm:ada');
@@ -647,6 +742,75 @@ void main() {
 
       expect(find.byType(FormattingHelpDialog), findsOneWidget);
       expect(find.text('Formatting help'), findsOneWidget);
+    });
+  });
+
+  group('editor height cap (#222)', () {
+    double fieldHeight(WidgetTester tester) =>
+        tester.getSize(find.byType(TextField)).height;
+
+    testWidgets('a short draft keeps the compact single-line height', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildComposerUnderTest());
+      final emptyHeight = fieldHeight(tester);
+
+      await tester.enterText(find.byType(TextField), 'Hi Ada');
+      await tester.pump();
+
+      expect(fieldHeight(tester), emptyHeight);
+    });
+
+    testWidgets('a long draft stops growing at eight lines and scrolls', (
+      tester,
+    ) async {
+      await tester.pumpWidget(buildComposerUnderTest());
+      final shortHeight = fieldHeight(tester);
+      final draft = List.generate(40, (i) => 'Line ${i + 1}').join('\n');
+
+      await tester.enterText(find.byType(TextField), draft);
+      await tester.pump();
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.maxLines, 8);
+      final cappedHeight = fieldHeight(tester);
+      expect(cappedHeight, greaterThan(shortHeight));
+      expect(cappedHeight, lessThan(200));
+      expect(composerController(tester).text, draft);
+
+      final internalScroll = find.descendant(
+        of: find.byType(EditableText),
+        matching: find.byType(Scrollable),
+      );
+      expect(internalScroll, findsOneWidget);
+      expect(
+        tester.state<ScrollableState>(internalScroll).position.maxScrollExtent,
+        greaterThan(0),
+      );
+    });
+
+    testWidgets('a long draft still leaves the Send control on screen', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1100, 500);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(buildComposerUnderTest());
+      await tester.enterText(
+        find.byType(TextField),
+        List.generate(40, (i) => 'Line ${i + 1}').join('\n'),
+      );
+      await tester.pump();
+
+      final composerBottom = tester
+          .getRect(find.byType(DmMessageComposer))
+          .bottom;
+      expect(composerBottom, lessThan(500));
+      expect(
+        tester.getRect(find.byIcon(Icons.send_rounded)).bottom,
+        lessThanOrEqualTo(composerBottom),
+      );
     });
   });
 }

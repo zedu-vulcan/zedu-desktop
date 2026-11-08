@@ -39,7 +39,9 @@ class SidebarChannelList extends ConsumerWidget {
               label: channel.name,
               selected:
                   activeChat.type == ActiveChatType.channel &&
-                  activeChat.id == channel.name,
+                  (activeChat.channelId == channel.id ||
+                      (activeChat.channelId == null &&
+                          activeChat.id == channel.name)),
               onTap: () => ref
                   .read(activeChatProvider.notifier)
                   .selectChannel(channel.name, channelId: channel.id),
@@ -67,7 +69,7 @@ class _SidebarChannelItem extends StatelessWidget {
     final borderRadius = BorderRadius.circular(6);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Ink(
         decoration: BoxDecoration(
           color: selected
@@ -77,33 +79,58 @@ class _SidebarChannelItem extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: borderRadius,
+          hoverColor: colors.onPrimary.withValues(alpha: 0.06),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(
-              children: [
-                Text(
-                  '#',
-                  style: TextStyle(
-                    color: colors.onPrimary.withValues(alpha: 0.54),
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: colors.onPrimary,
-                      fontSize: 15,
-                      fontWeight: selected ? FontWeight.w600 : null,
+          child: Stack(
+            children: [
+              if (selected)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: 3,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.accent,
+                      borderRadius: const BorderRadius.horizontal(
+                        left: Radius.circular(6),
+                      ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  children: [
+                    Text(
+                      '#',
+                      style: TextStyle(
+                        color: selected
+                            ? colors.accent
+                            : colors.onPrimary.withValues(alpha: 0.54),
+                        fontSize: 18,
+                        fontWeight: selected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colors.onPrimary,
+                          fontSize: 15,
+                          fontWeight: selected ? FontWeight.w600 : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -2,8 +2,10 @@ import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
 final peopleRemoteDataSourceProvider = Provider<PeopleRemoteDataSource>(
-  (ref) =>
-      PeopleRemoteDataSourceImpl(apiBaseService: locator<ApiBaseService>()),
+  (ref) => PeopleRemoteDataSourceImpl(
+    apiBaseService: locator<ApiBaseService>(),
+    config: locator<AppConfig>(),
+  ),
 );
 
 final peopleRepositoryProvider = Provider<PeopleRepository>(

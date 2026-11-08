@@ -232,6 +232,13 @@ class _SettingsNavigationState extends State<_SettingsNavigation> {
                   ),
                   if (_organizationExpanded) ...[
                     _NavigationTile(
+                      icon: Icons.webhook_outlined,
+                      label: 'Webhooks',
+                      selected: selectedSection == UserProfileSection.webhooks,
+                      onTap: () =>
+                          onSectionSelected(UserProfileSection.webhooks),
+                    ),
+                    _NavigationTile(
                       icon: Icons.settings_outlined,
                       label: 'General',
                       selected:
@@ -255,6 +262,16 @@ class _SettingsNavigationState extends State<_SettingsNavigation> {
                           UserProfileSection.rolesAndPermissions,
                       onTap: () => onSectionSelected(
                         UserProfileSection.rolesAndPermissions,
+                      ),
+                    ),
+                    _NavigationTile(
+                      icon: Icons.tag,
+                      label: 'Channel Management',
+                      selected:
+                          selectedSection ==
+                          UserProfileSection.channelManagement,
+                      onTap: () => onSectionSelected(
+                        UserProfileSection.channelManagement,
                       ),
                     ),
                     _NavigationTile(

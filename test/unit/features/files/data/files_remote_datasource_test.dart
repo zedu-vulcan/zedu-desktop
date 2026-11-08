@@ -19,7 +19,29 @@ void main() {
     downloadClient = MockDio();
     datasource = FilesRemoteDataSourceImpl(
       apiBaseService: api,
+      config: AppConfig(
+        apiBaseUrl: 'https://example.test',
+        usesMockData: false,
+      ),
       downloadClient: downloadClient,
+    );
+  });
+
+  test('mock build lists no files and makes no request (#3474)', () async {
+    final mockDatasource = FilesRemoteDataSourceImpl(
+      apiBaseService: api,
+      config: AppConfig(apiBaseUrl: 'https://example.test', usesMockData: true),
+      downloadClient: downloadClient,
+    );
+
+    final page = await mockDatasource.fetchFiles(const FilesQuery());
+
+    expect(page.files, isEmpty);
+    verifyNever(
+      () => api.get<Map<String, dynamic>>(
+        path: any(named: 'path'),
+        queryParameters: any(named: 'queryParameters'),
+      ),
     );
   });
 
@@ -676,6 +698,73 @@ void main() {
 
       expect(
         datasource.fetchFileDetails('f-1'),
+        throwsA(
+          isA<ApiFailure>().having(
+            (f) => f.kind,
+            'kind',
+            ApiFailureKind.parsing,
+          ),
+        ),
+      );
+    });
+  });
+
+  group('fetchFileInfo', () {
+    test('reads the channels the file was shared in', () async {
+      when(
+        () => api.get<Map<String, dynamic>>(path: '/files/file/f-1/info'),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {
+            'data': {
+              'owner': 'Ada Lovelace',
+              'date_uploaded': '2026-10-30T14:05:00Z',
+              'last_updated': '2026-11-01T09:00:00Z',
+              'shared_in': ['general', 'design'],
+            },
+          },
+        ),
+      );
+
+      final info = await datasource.fetchFileInfo('f-1');
+
+      expect(info.owner, 'Ada Lovelace');
+      expect(info.sharedIn, ['general', 'design']);
+      expect(info.sharedInLabel, 'general, design');
+      expect(info.dateUploaded, DateTime.utc(2026, 10, 30, 14, 5).toLocal());
+    });
+
+    test('a file shared nowhere has no channels', () async {
+      when(
+        () => api.get<Map<String, dynamic>>(path: '/files/file/f-1/info'),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {
+            'data': {'owner': 'Ada Lovelace', 'shared_in': <String>[]},
+          },
+        ),
+      );
+
+      final info = await datasource.fetchFileInfo('f-1');
+
+      expect(info.sharedIn, isEmpty);
+      expect(info.sharedInLabel, isEmpty);
+    });
+
+    test('a response without the info is a parsing failure', () async {
+      when(
+        () => api.get<Map<String, dynamic>>(path: '/files/file/f-1/info'),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {'data': null},
+        ),
+      );
+
+      expect(
+        datasource.fetchFileInfo('f-1'),
         throwsA(
           isA<ApiFailure>().having(
             (f) => f.kind,

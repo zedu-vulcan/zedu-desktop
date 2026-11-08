@@ -5,6 +5,7 @@ final channelRepositoryProvider = Provider<ChannelRepository>((ref) {
   final apiBaseService = locator<ApiBaseService>();
   final remoteDataSource = ChannelRemoteDataSourceImpl(
     apiBaseService: apiBaseService,
+    config: locator<AppConfig>(),
   );
   return ChannelRepositoryImpl(remoteDataSource: remoteDataSource);
 });

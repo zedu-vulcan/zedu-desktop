@@ -228,14 +228,46 @@ class SecuritySessionModel extends SecuritySession {
     required super.status,
   });
 
+  /// Reads a session from `GET /users/{id}/sessions` (`created_at`,
+  /// `updated_at`, `is_live`) or from the mock data (display strings). The
+  /// API gives no device or location, so those show [unknown] rather than
+  /// made-up values.
   factory SecuritySessionModel.fromJson(Map<String, dynamic> json) {
+    final isLive = json['is_live'];
     return SecuritySessionModel(
-      device: json['device'] as String? ?? 'Chrome',
-      location: json['location'] as String? ?? 'Lagos',
-      date: json['date'] as String? ?? 'May 8, 2026 1:07 PM',
-      lastActive: json['last_active'] as String? ?? 'May 8, 2026 3:07 PM',
-      status: json['status'] as String? ?? 'Active',
+      device: _text(json['device']) ?? unknown,
+      location: _text(json['location']) ?? unknown,
+      date: _text(json['date']) ?? _formatTime(json['created_at']) ?? unknown,
+      lastActive:
+          _text(json['last_active']) ??
+          _formatTime(json['updated_at']) ??
+          unknown,
+      status:
+          _text(json['status']) ??
+          (isLive is bool ? (isLive ? 'Active' : 'Signed out') : unknown),
     );
+  }
+
+  /// Shown for a detail the server doesn't send.
+  static const unknown = '—';
+
+  static String? _text(Object? value) =>
+      value is String && value.trim().isNotEmpty ? value : null;
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// "May 8, 2026 1:07 PM" in local time, or null when [value] isn't a time.
+  static String? _formatTime(Object? value) {
+    final parsed = value is String ? DateTime.tryParse(value) : null;
+    if (parsed == null) return null;
+    final t = parsed.toLocal();
+    final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    final period = t.hour < 12 ? 'AM' : 'PM';
+    return '${_months[t.month - 1]} ${t.day}, ${t.year} $hour:$minute $period';
   }
 }
 

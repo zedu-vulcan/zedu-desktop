@@ -296,5 +296,13 @@ void main() {
 
       expect(notifier.createCalls, 1);
     });
+
+    testWidgets('name text field has autofocus enabled', (tester) async {
+      await openModal(tester);
+
+      final textField = tester.widget<TextField>(find.byType(TextField).first);
+      expect(textField.autofocus, isTrue);
+      expect(textField.textInputAction, TextInputAction.done);
+    });
   });
 }

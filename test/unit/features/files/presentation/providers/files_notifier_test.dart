@@ -69,6 +69,60 @@ void main() {
     expect(state().query.search, 'logo');
   });
 
+  group('Reset filters (Ziki #3445)', () {
+    test('clears search, type and date together, keeping the rest', () {
+      notifier()
+        ..selectView(FilesScope.mine)
+        ..openFolder(const FileFolder(id: 'f1', name: 'Reports'))
+        ..setTab(FilesTab.files)
+        ..setSort(FilesSort.oldestFirst)
+        ..setCategory(FileCategory.images)
+        ..setDateModified(DateModifiedFilter.today)
+        ..setSearch('logo')
+        ..setPage(3);
+      expect(state().hasFilters, isTrue);
+
+      notifier().resetFilters();
+
+      expect(state().category, isNull);
+      expect(state().dateModified, isNull);
+      expect(state().search, '');
+      expect(state().hasFilters, isFalse);
+      expect(state().page, 1);
+      expect(state().view, FilesScope.mine);
+      expect(state().folderId, 'f1');
+      expect(state().tab, FilesTab.files);
+      expect(state().sort, FilesSort.oldestFirst);
+    });
+
+    test('changes state once, so the list refreshes once', () {
+      notifier()
+        ..setCategory(FileCategory.images)
+        ..setSearch('logo');
+      var changes = 0;
+      final sub = container.listen(filesProvider, (_, _) => changes++);
+      addTearDown(sub.close);
+
+      notifier().resetFilters();
+
+      expect(changes, 1);
+    });
+
+    test('does nothing when no filter is set', () {
+      final before = state();
+
+      notifier().resetFilters();
+
+      expect(identical(state(), before), isTrue);
+    });
+
+    test('a search of only spaces is not a filter', () {
+      notifier().setSearch('   ');
+
+      expect(state().hasFilters, isFalse);
+    });
+  });
+
   test('sorting goes back to the first page without changing the request', () {
     notifier().setPage(2);
     final before = state().query;
@@ -108,6 +162,36 @@ void main() {
 
       expect(repository.pages, [2]);
       expect(page.currentPage, 2);
+    });
+
+    test('Name (A–Z) reads the page the user asked for (Ziki #3449)', () async {
+      repository.totalPages = 3;
+      filesNotifier().setSort(FilesSort.nameAz);
+      filesNotifier().setPage(2);
+      final page = await files.read(filesListProvider.future);
+
+      expect(repository.pages, [2]);
+      expect(page.currentPage, 2);
+    });
+
+    test('choosing Name (A–Z) keeps the filters, folder and tab', () {
+      filesNotifier()
+        ..openFolder(const FileFolder(id: 'f1', name: 'Reports'))
+        ..setCategory(FileCategory.documents)
+        ..setDateModified(DateModifiedFilter.last7Days)
+        ..setSearch('plan');
+      final before = files.read(filesProvider);
+
+      filesNotifier().setSort(FilesSort.nameAz);
+      final after = files.read(filesProvider);
+
+      expect(after.sort, FilesSort.nameAz);
+      expect(after.folderId, before.folderId);
+      expect(after.category, FileCategory.documents);
+      expect(after.dateModified, DateModifiedFilter.last7Days);
+      expect(after.search, 'plan');
+      expect(after.tab, before.tab);
+      expect(after.view, before.view);
     });
 
     test('oldest first reads the server pages backwards', () async {
@@ -228,9 +312,13 @@ void main() {
 
 /// Server pages of ten files, newest first: page 1 holds the newest files and
 /// every later page holds older ones.
-class _PagedRepository implements FilesRepository {
+class _PagedRepository extends Fake implements FilesRepository {
   int totalPages = 1;
   final pages = <int>[];
+
+  @override
+  Future<Result<WorkspaceFileInfo>> fetchFileInfo(String fileId) async =>
+      Success(WorkspaceFileInfo());
 
   @override
   Future<Result<FilesPage>> fetchFiles(FilesQuery query) async {
@@ -274,9 +362,61 @@ class _PagedRepository implements FilesRepository {
     required String orgId,
     String? parentId,
   }) async => const Success(null);
+
+  @override
+  Future<Result<void>> downloadFile({
+    required WorkspaceFile file,
+    required String savePath,
+    void Function(double? progress)? onProgress,
+  }) async => const Success(null);
+
+  @override
+  Future<Result<void>> deleteFile(
+    String fileId, {
+    bool permanent = false,
+  }) async => const Success(null);
+
+  @override
+  Future<Result<void>> renameFile(String fileId, String name) async =>
+      const Success(null);
+
+  @override
+  Future<Result<void>> moveFile(String fileId, String folderId) async =>
+      const Success(null);
+
+  @override
+  Future<Result<FileShareResult>> shareFile({
+    required String fileId,
+    required List<String> recipientIds,
+    required FileSharePermission permission,
+    required FileShareAccess access,
+    String note = '',
+  }) async => const Success(FileShareResult());
+
+  @override
+  Future<Result<Uint8List>> fetchFilePreview(
+    WorkspaceFile file,
+    FilePreviewKind kind,
+  ) async => Success(Uint8List(0));
+
+  @override
+  Future<Result<WorkspaceFile>> fetchFileDetails(String fileId) async =>
+      Success(WorkspaceFile(id: fileId, name: fileId));
+
+  @override
+  Future<Result<Set<String>>> fetchPinnedFileIds() async => const Success({});
+
+  @override
+  Future<Result<void>> pinFile(String fileId) async => const Success(null);
+
+  @override
+  Future<Result<void>> unpinFile(String fileId) async => const Success(null);
+
+  @override
+  Future<Result<void>> deleteFolder(String id) async => const Success(null);
 }
 
-class _UploadRepository implements FilesRepository {
+class _UploadRepository extends Fake implements FilesRepository {
   final uploaded = <String>[];
   ApiFailure? folderError;
 
@@ -350,6 +490,10 @@ class _UploadRepository implements FilesRepository {
       Success(WorkspaceFile(id: fileId, name: fileId));
 
   @override
+  Future<Result<WorkspaceFileInfo>> fetchFileInfo(String fileId) async =>
+      Success(WorkspaceFileInfo());
+
+  @override
   Future<Result<Set<String>>> fetchPinnedFileIds() async => const Success({});
 
   @override
@@ -357,4 +501,7 @@ class _UploadRepository implements FilesRepository {
 
   @override
   Future<Result<void>> unpinFile(String fileId) async => const Success(null);
+
+  @override
+  Future<Result<void>> deleteFolder(String id) async => const Success(null);
 }

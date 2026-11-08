@@ -45,8 +45,10 @@ class _FakeUserProfileNotifier extends UserProfileNotifier {
 
 class _EmptyChannelRepository extends Mock implements ChannelRepository {
   @override
-  Future<Result<List<ChannelMessage>>> fetchChannelMessages(String id) async =>
-      const Success(<ChannelMessage>[]);
+  Future<Result<ChannelMessagePage>> fetchChannelMessages(
+    String id, {
+    int page = 1,
+  }) async => const Success(ChannelMessagePage(messages: [], hasMore: false));
 }
 
 class _FakeSecureStorageService extends Fake implements SecureStorageService {
@@ -147,17 +149,30 @@ void main() {
     expect(container.read(activeChatProvider).type, ActiveChatType.channel);
   });
 
-  testWidgets('the button shows it can be clicked', (tester) async {
+  testWidgets('the button is readable and has a visible hover state', (
+    tester,
+  ) async {
     await pumpHome(tester);
 
-    final inkWell = tester.widget<InkWell>(
-      find.ancestor(
-        of: find.text('View all channels'),
-        matching: find.byType(InkWell),
-      ),
+    final inkWellFinder = find.ancestor(
+      of: find.text('View all channels'),
+      matching: find.byType(InkWell),
     );
+    final inkWell = tester.widget<InkWell>(inkWellFinder);
+    final material = tester.widget<Material>(
+      find.ancestor(of: inkWellFinder, matching: find.byType(Material)).first,
+    );
+    final text = tester.widget<Text>(find.text('View all channels'));
 
+    const palette = AppPalette.light;
+    expect(text.style?.color, palette.onPrimary);
+    expect(material.color?.a, moreOrLessEquals(0.12));
+    expect(
+      (material.shape! as RoundedRectangleBorder).side.color.a,
+      greaterThanOrEqualTo(0.45),
+    );
     expect(inkWell.onTap, isNotNull);
     expect(inkWell.hoverColor, isNotNull);
+    expect(inkWell.hoverColor!.a, greaterThanOrEqualTo(0.2));
   });
 }

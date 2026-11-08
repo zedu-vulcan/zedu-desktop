@@ -22,10 +22,12 @@ class WebhookModel {
     return WebhookModel(
       id: _asString(json['id']),
       channelId: _asString(json['channelId'] ?? json['channel_id']),
-      name: _asString(json['name']),
-      slug: _asString(json['slug']),
-      url: _asString(json['url']),
-      isActive: _asBool(json['isActive'] ?? json['is_active']),
+      name: _asString(json['webhook_name'] ?? json['name']),
+      slug: _asString(json['webhook_slug'] ?? json['slug']),
+      url: _asString(json['webhook_url'] ?? json['url']),
+      isActive: json['status'] != null
+          ? json['status'] == 'active'
+          : _asBool(json['isActive'] ?? json['is_active']),
       createdAt: _parseDate(json['createdAt'] ?? json['created_at']),
     );
   }

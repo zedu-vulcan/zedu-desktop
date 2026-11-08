@@ -31,6 +31,16 @@ String defaultApiBaseUrl({required bool isRelease}) =>
 /// The website's Contact Sales page, opened from the Enterprise plan.
 const String kDefaultContactSalesUrl = 'https://zedu.chat/contact-sales';
 
+/// Where in-app reports of messages and people go, until the backend has a
+/// report endpoint.
+const String kReportEmail = 'support@emerj.net';
+
+/// The live Centrifugo websocket, used when `CONNECT_URL` comes from neither
+/// `--dart-define` nor `.env`. It carries realtime events such as incoming
+/// Buzz calls; the web app reads the same URL from `NEXT_PUBLIC_CONNECT_URL`.
+const String kDefaultConnectUrl =
+    'wss://api.zedu.chat/centrifugo/connection/websocket';
+
 /// Default repository URL for the Zedu Desktop app.
 const String kDefaultRepoUrl = 'https://github.com/zeduchat/zedu-desktop';
 
@@ -44,6 +54,7 @@ class AppConfig {
     this.webAppUrl = '',
     this.repoUrl = kDefaultRepoUrl,
     this.repoUrls = const <String>[],
+    this.connectUrl = kDefaultConnectUrl,
   });
 
   /// Whether [url] matches one of the repository URLs this project accepts
@@ -77,6 +88,7 @@ class AppConfig {
     const defineWebAppUrl = String.fromEnvironment('WEB_APP_URL');
     const defineRepoUrl = String.fromEnvironment('REPO_URL');
     const defineRepoUrls = String.fromEnvironment('REPO_URLS');
+    const defineConnectUrl = String.fromEnvironment('CONNECT_URL');
 
     final envApiBaseUrl = dotenv.maybeGet('API_BASE_URL')?.trim();
     final envUsesMock = dotenv.maybeGet('USE_MOCK_DATA')?.trim();
@@ -85,6 +97,7 @@ class AppConfig {
     final envWebAppUrl = dotenv.maybeGet('WEB_APP_URL')?.trim();
     final envRepoUrl = dotenv.maybeGet('REPO_URL')?.trim();
     final envRepoUrls = dotenv.maybeGet('REPO_URLS')?.trim();
+    final envConnectUrl = dotenv.maybeGet('CONNECT_URL')?.trim();
 
     // Teams point the app at their own backend via --dart-define or .env;
     // otherwise the build mode decides, so release builds never default to
@@ -142,6 +155,11 @@ class AppConfig {
     }
     repoUrls.add(repoUrl);
     repoUrls = repoUrls.toSet().toList(); // Deduplicate
+    final connectUrl = defineConnectUrl.isNotEmpty
+        ? defineConnectUrl
+        : (envConnectUrl?.isNotEmpty ?? false)
+        ? envConnectUrl!
+        : kDefaultConnectUrl;
 
     return AppConfig(
       apiBaseUrl: apiBaseUrl,
@@ -153,6 +171,7 @@ class AppConfig {
           : envWebAppUrl ?? '',
       repoUrl: repoUrl,
       repoUrls: repoUrls,
+      connectUrl: connectUrl,
     );
   }
 
@@ -196,6 +215,9 @@ class AppConfig {
       port: api.hasPort ? api.port : null,
     ).toString();
   }
+
+  /// Centrifugo websocket for realtime events (`CONNECT_URL`).
+  final String connectUrl;
 }
 
 bool _parseBool(String raw, {required bool defaultValue}) {

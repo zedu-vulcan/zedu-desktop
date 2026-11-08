@@ -36,6 +36,7 @@ class ChannelMessageList extends ConsumerWidget {
               m['created_at']?.toString() ?? '',
             )?.toLocal(),
             status: m['status']?.toString(),
+            media: ChannelMessage.mediaFrom(m['media'] ?? m['files']),
           ),
         )
         .toList();
@@ -55,11 +56,11 @@ class ChannelMessageList extends ConsumerWidget {
                   ),
                 )
               : _buildList(context, ref, pendingMessages),
-          data: (serverMessages) {
-            final allMessages = [...pendingMessages, ...serverMessages];
+          data: (history) {
+            final allMessages = [...pendingMessages, ...history.messages];
             return allMessages.isEmpty
                 ? empty
-                : _buildList(context, ref, allMessages);
+                : _buildList(context, ref, allMessages, history: history);
           },
         );
   }
@@ -67,8 +68,9 @@ class ChannelMessageList extends ConsumerWidget {
   Widget _buildList(
     BuildContext context,
     WidgetRef ref,
-    List<ChannelMessage> messages,
-  ) {
+    List<ChannelMessage> messages, {
+    ChannelHistoryState? history,
+  }) {
     // Read only when a message names its sender, so lists without sender ids
     // never touch the signed-in user.
     String? me;
@@ -80,16 +82,33 @@ class ChannelMessageList extends ConsumerWidget {
       return me!.isNotEmpty && sender == me;
     }
 
+    // The footer sits after the oldest message, which is the top of this
+    // reversed list. Older pages are appended behind the reader, so the
+    // scroll offset (measured from the newest end) holds.
+    final showFooter =
+        history != null && (history.hasMore || history.loadMoreError != null);
+
     return ListView.builder(
       reverse: true,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      itemCount: messages.length,
+      itemCount: messages.length + (showFooter ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index == messages.length) {
+          return _OlderMessagesFooter(channelId: channelId);
+        }
         final message = messages[index];
         // Only the sender's own, already sent messages can be changed.
         final own = isMine(message);
         final tile = ChannelMessageTile(
+          channelId: channelId,
           message: message,
+          saveAction:
+              message.status == null && (message.threadId ?? message.id) != null
+              ? SaveLaterButton(
+                  channelId: channelId,
+                  threadId: message.threadId ?? message.id!,
+                )
+              : null,
           onRetry: message.id != null
               ? () => ref
                     .read(chatHistoryProvider(channelId))
@@ -205,15 +224,66 @@ class ChannelDayDivider extends StatelessWidget {
   }
 }
 
-class ChannelMessageTile extends StatelessWidget {
+/// The top of the list while older messages remain: loads the next page once
+/// it scrolls into view, and offers a retry when that fails.
+class _OlderMessagesFooter extends ConsumerWidget {
+  const _OlderMessagesFooter({required this.channelId});
+
+  final String channelId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final history = ref.watch(channelHistoryProvider(channelId)).value;
+    final notifier = ref.read(channelHistoryProvider(channelId).notifier);
+
+    if (history?.loadMoreError != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Center(
+          child: TextButton(
+            onPressed: notifier.loadMore,
+            child: const Text("Couldn't load older messages. Retry"),
+          ),
+        ),
+      );
+    }
+
+    if (history != null && history.hasMore && !history.isLoadingMore) {
+      // Built means visible: the list only builds what is on screen. Retries
+      // are left to the button above so a failing request cannot loop.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) notifier.loadMore();
+      });
+    }
+
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 16),
+      child: Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            semanticsLabel: 'Loading older messages',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ChannelMessageTile extends ConsumerStatefulWidget {
   const ChannelMessageTile({
     super.key,
+    required this.channelId,
     required this.message,
     this.onRetry,
     this.onEdit,
     this.onDelete,
+    this.saveAction,
   });
 
+  final String channelId;
   final ChannelMessage message;
   final VoidCallback? onRetry;
 
@@ -222,14 +292,81 @@ class ChannelMessageTile extends StatelessWidget {
 
   /// Set for the current user's own messages; shows Delete in the menu.
   final VoidCallback? onDelete;
+  final Widget? saveAction;
+
+  @override
+  ConsumerState<ChannelMessageTile> createState() => _ChannelMessageTileState();
+}
+
+class _ChannelMessageTileState extends ConsumerState<ChannelMessageTile> {
+  /// Emojis with a toggle request still in flight, to block double taps.
+  final Set<String> _busyEmojis = {};
+
+  ChannelMessage get _message => widget.message;
+
+  Future<void> _toggleReaction(String emoji, {String? reactionId}) async {
+    final messageId = _message.id;
+    if (messageId == null || messageId.isEmpty) return;
+    if (_busyEmojis.contains(emoji)) return;
+
+    setState(() => _busyEmojis.add(emoji));
+    final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final result = await ref
+          .read(channelRepositoryProvider)
+          .toggleReaction(
+            channelId: widget.channelId,
+            threadId: messageId,
+            emoji: emoji,
+          );
+      switch (result) {
+        case Success<bool>():
+          ref.invalidate(channelHistoryProvider(widget.channelId));
+          if (reactionId != null && reactionId.isNotEmpty) {
+            ref.invalidate(
+              reactionUsersProvider((
+                reactionId: reactionId,
+                threadId: messageId,
+              )),
+            );
+          }
+        case Failure<bool>(:final error):
+          scaffoldMessenger?.showSnackBar(
+            SnackBar(content: Text(error.message)),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _busyEmojis.remove(emoji));
+    }
+  }
+
+  void _openEmojiPicker() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: DmEmojiPicker(
+          onEmojiSelected: (emoji) {
+            Navigator.of(dialogContext).pop();
+            _toggleReaction(emoji);
+          },
+          onClose: () => Navigator.of(dialogContext).pop(),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final avatarUrl = message.avatarUrl;
-    final time = message.createdAt;
-    final initial = avatarInitial(message.senderName);
-    final status = message.status;
+    final avatarUrl = _message.avatarUrl;
+    final time = _message.createdAt;
+    final initial = avatarInitial(_message.senderName);
+    final status = _message.status;
+    final hasReactions = _message.reactions.isNotEmpty;
+    final canReact =
+        _message.id != null && _message.id!.isNotEmpty && status == null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -255,7 +392,7 @@ class ChannelMessageTile extends StatelessWidget {
                     Expanded(
                       child: Text.rich(
                         TextSpan(
-                          text: message.senderName,
+                          text: _message.senderName,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: colors.textPrimary,
@@ -275,26 +412,73 @@ class ChannelMessageTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (onEdit != null || onDelete != null)
-                      _OwnMessageMenu(onEdit: onEdit, onDelete: onDelete),
+                    ?widget.saveAction,
+                    if (widget.onEdit != null || widget.onDelete != null)
+                      _OwnMessageMenu(
+                        onEdit: widget.onEdit,
+                        onDelete: widget.onDelete,
+                      ),
                   ],
                 ),
                 const SizedBox(height: 4),
-                MessageLinkScope(
-                  builder: (context, links) => SelectableText.rich(
-                    buildInlineMarkdownSpan(
-                      message.text,
-                      TextStyle(fontSize: 15, color: colors.textPrimary),
-                      plainText: links.span,
+                if (_message.text.isNotEmpty || _message.media.isEmpty)
+                  ReportMessageMenu(
+                    senderName: _message.senderName,
+                    messageText: _message.text,
+                    child: MessageLinkScope(
+                      builder: (context, links) => SelectableText.rich(
+                        buildInlineMarkdownSpan(
+                          _message.text,
+                          TextStyle(fontSize: 15, color: colors.textPrimary),
+                          plainText: links.span,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                if (_message.media.isNotEmpty) ...[
+                  if (_message.text.isNotEmpty) const SizedBox(height: 8),
+                  MessageAttachmentList(media: _message.media, isMe: false),
+                ],
+                if (hasReactions || canReact)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        for (final reaction in _message.reactions)
+                          _ReactionPill(
+                            reaction: reaction,
+                            reacted: _didUserReact(reaction),
+                            busy: _busyEmojis.contains(reaction.emoji),
+                            onTap: () => _toggleReaction(
+                              reaction.emoji,
+                              reactionId: reaction.reactionId,
+                            ),
+                          ),
+                        if (canReact)
+                          IconButton(
+                            onPressed: _openEmojiPicker,
+                            icon: Icon(
+                              Icons.add_reaction_outlined,
+                              size: 18,
+                              color: colors.textHint,
+                            ),
+                            tooltip: 'Add reaction',
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                          ),
+                      ],
+                    ),
+                  ),
                 if (status != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: status == 'failed'
                         ? GestureDetector(
-                            onTap: onRetry,
+                            onTap: widget.onRetry,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -327,6 +511,75 @@ class ChannelMessageTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  bool _didUserReact(ChannelReaction reaction) {
+    final messageId = _message.id ?? '';
+    final authState = ref.watch(authNotifierProvider);
+    final user = authState.user;
+    final String? myUsername = user == null
+        ? null
+        : (user.username.isEmpty ? user.email.split('@').first : user.username)
+              .toLowerCase();
+    if (myUsername == null) return false;
+    final users = ref
+        .watch(
+          reactionUsersProvider((
+            reactionId: reaction.reactionId,
+            threadId: messageId,
+          )),
+        )
+        .value;
+    return users?.any((u) => u.toLowerCase() == myUsername) ?? false;
+  }
+}
+
+class _ReactionPill extends StatelessWidget {
+  const _ReactionPill({
+    required this.reaction,
+    required this.reacted,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final ChannelReaction reaction;
+  final bool reacted;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final background = reacted ? colors.primary : colors.background;
+    final border = reacted ? colors.primary : colors.divider;
+    final foreground = reacted ? colors.onPrimary : colors.textSecondary;
+
+    return Material(
+      color: background,
+      shape: StadiumBorder(side: BorderSide(color: border)),
+      child: InkWell(
+        onTap: busy ? null : onTap,
+        customBorder: const StadiumBorder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(reaction.emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 4),
+              Text(
+                '${reaction.count}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: foreground,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

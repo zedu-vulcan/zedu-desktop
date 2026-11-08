@@ -58,7 +58,7 @@ class _AppTextFieldState extends State<AppTextField> {
   @override
   void didUpdateWidget(covariant AppTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isPassword != widget.isPassword) {
+    if (widget.isPassword != oldWidget.isPassword) {
       obscureText = widget.isPassword;
     }
   }

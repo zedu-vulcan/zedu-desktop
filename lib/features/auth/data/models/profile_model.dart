@@ -21,6 +21,9 @@ class ProfileModel {
     this.isOnboarded = true,
     this.currentOrg = '',
     this.currentOrganisationSlug = '',
+    this.creditBalance = 0,
+    this.subscriptionPlanId = 'free',
+    this.aiCreditsPurchasable = true,
     this.status = UserStatus.empty,
   });
 
@@ -38,6 +41,9 @@ class ProfileModel {
   final bool isOnboarded;
   final String currentOrg;
   final String currentOrganisationSlug;
+  final int creditBalance;
+  final String subscriptionPlanId;
+  final bool aiCreditsPurchasable;
 
   /// The user's custom status and presence, so they survive a restart.
   final UserStatus status;
@@ -66,6 +72,9 @@ class ProfileModel {
           '',
       currentOrganisationSlug:
           json['current_organisation_slug'] as String? ?? '',
+      creditBalance: (json['credit_balance'] as num?)?.toInt() ?? 0,
+      subscriptionPlanId: json['subscription_plan_id'] as String? ?? 'free',
+      aiCreditsPurchasable: json['ai_credits_purchasable'] as bool? ?? true,
       status: _parseStatus(json),
     );
   }
@@ -84,36 +93,96 @@ class ProfileModel {
     currentOrganisationSlug: currentOrganisationSlug,
     avatarUrl: avatarUrl,
     defaultAvatarUrl: defaultAvatarUrl,
+    creditBalance: creditBalance,
+    subscriptionPlanId: subscriptionPlanId,
+    aiCreditsPurchasable: aiCreditsPurchasable,
     status: status,
   );
 
-  /// Reads `icon`, `text`, `pause_notification`, `status_timeout` and
-  /// `online`. Empty strings mean no status, as in `changeStatus`.
   static UserStatus _parseStatus(Map<String, dynamic> json) {
-    final icon = json['icon'];
-    final text = json['text'];
-    final online = json['online'];
+    final statusMap = json['status'] is Map<String, dynamic>
+        ? json['status'] as Map<String, dynamic>
+        : json;
+
+    final rawEmoji =
+        statusMap['emoji'] ??
+        statusMap['icon'] ??
+        json['emoji'] ??
+        json['icon'];
+    final emoji = rawEmoji is String && rawEmoji.isNotEmpty ? rawEmoji : null;
+
+    final rawText =
+        statusMap['text'] ??
+        statusMap['status_text'] ??
+        json['text'] ??
+        json['status_text'];
+    final text = rawText is String && rawText.isNotEmpty ? rawText : null;
+
+    final pauseNotifications =
+        statusMap['pause_notification'] as bool? ??
+        statusMap['pause_notifications'] as bool? ??
+        json['pause_notification'] as bool? ??
+        json['pause_notifications'] as bool? ??
+        false;
+
+    final online =
+        statusMap['online'] as bool? ??
+        statusMap['is_online'] as bool? ??
+        json['online'] as bool? ??
+        json['is_online'] as bool? ??
+        true;
+
+    final rawTimeout =
+        statusMap['status_timeout'] ??
+        statusMap['expires_at'] ??
+        statusMap['status_expires_at'] ??
+        json['status_timeout'] ??
+        json['expires_at'] ??
+        json['status_expires_at'];
+
+    final expiresAt = _parseExpiresAt(rawTimeout);
+
     return UserStatus(
-      emoji: icon is String && icon.isNotEmpty ? icon : null,
-      text: text is String && text.isNotEmpty ? text : null,
-      expiresAt: _parseStatusExpiry(json['status_timeout']),
-      pauseNotifications: json['pause_notification'] == true,
-      online: online is bool ? online : true,
+      emoji: emoji,
+      text: text,
+      expiresAt: expiresAt,
+      pauseNotifications: pauseNotifications,
+      online: online,
     );
   }
 
-  /// `status_timeout` holds Unix seconds when the server knows the expiry.
-  /// It can also be empty or hold the raw value the client sent
-  /// ("30 minutes", "dont-clear"). Those give no time, so the status is kept
-  /// without an expiry; the server clears it when it runs out.
-  static DateTime? _parseStatusExpiry(Object? raw) {
-    final seconds = switch (raw) {
-      num value => value.toInt(),
-      String value => int.tryParse(value.trim()),
-      _ => null,
-    };
-    if (seconds == null || seconds <= 0) return null;
-    return DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+  static DateTime? _parseExpiresAt(Object? raw) {
+    if (raw == null) return null;
+    if (raw is num) {
+      if (raw <= 0) return null;
+      final millis = raw > 10000000000 ? raw.toInt() : (raw * 1000).toInt();
+      return DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty ||
+          trimmed.toLowerCase() == 'dont-clear' ||
+          trimmed.toLowerCase() == "don't-clear" ||
+          trimmed.toLowerCase() == 'dont clear' ||
+          trimmed.toLowerCase() == "don't clear") {
+        return null;
+      }
+      final seconds = int.tryParse(trimmed);
+      if (seconds != null) {
+        if (seconds <= 0) return null;
+        final millis = seconds > 10000000000 ? seconds : seconds * 1000;
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+      final iso = DateTime.tryParse(trimmed);
+      if (iso != null) return iso;
+      for (final val in StatusTimeout.values) {
+        if (val.apiValue.toLowerCase() == trimmed.toLowerCase() ||
+            val.label.toLowerCase() == trimmed.toLowerCase()) {
+          return val.expiryFrom(DateTime.now());
+        }
+      }
+    }
+    return null;
   }
 
   /// Accepts ISO-8601 strings and epoch-seconds strings.
