@@ -14,18 +14,23 @@ class FileRenamesNotifier extends Notifier<Set<String>> {
     if (newName == file.name || state.contains(file.id)) return null;
 
     state = {...state, file.id};
-    final result = await ref
-        .read(filesRepositoryProvider)
-        .renameFile(file.id, newName);
-    if (!ref.mounted) return null;
-    state = {...state}..remove(file.id);
+    try {
+      final result = await ref
+          .read(filesRepositoryProvider)
+          .renameFile(file.id, newName);
+      if (!ref.mounted) return null;
 
-    switch (result) {
-      case Success():
-        ref.invalidate(filesListProvider);
-        return null;
-      case Failure(:final error):
-        return 'Could not rename ${file.name}. ${_reason(error)}';
+      switch (result) {
+        case Success():
+          ref.invalidate(filesListProvider);
+          return null;
+        case Failure(:final error):
+          return 'Could not rename ${file.name}. ${_reason(error)}';
+      }
+    } finally {
+      if (ref.mounted) {
+        state = {...state}..remove(file.id);
+      }
     }
   }
 

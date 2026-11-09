@@ -5,7 +5,6 @@ export 'presentation/views/new_group_chat_view.dart';
 export 'data/services/chat_storage_service.dart';
 export 'data/services/chat_websocket_service.dart';
 export 'data/services/message_search_service.dart';
-export 'presentation/widgets/message_composer.dart';
 export 'presentation/widgets/message_bubble.dart';
 export 'presentation/widgets/thread_panel.dart';
 export 'presentation/widgets/search_panel.dart';

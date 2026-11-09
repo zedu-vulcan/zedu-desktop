@@ -47,7 +47,7 @@ void main() {
 
     final result = await repository.fetchMembers(orgId: 'org-1');
 
-    final error = (result as Failure<MembersPage>).error as ApiFailure;
+    final error = (result as Failure<MembersPage>).error;
     expect(error.kind, ApiFailureKind.unknown);
     expect(error.friendlyMessage, isNot(contains('errno')));
   });

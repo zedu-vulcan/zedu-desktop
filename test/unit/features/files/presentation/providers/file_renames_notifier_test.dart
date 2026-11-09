@@ -71,4 +71,16 @@ void main() {
     );
     expect(container.read(fileRenamesProvider), isEmpty);
   });
+
+  test('cleans up state if renameFile throws an exception', () async {
+    when(
+      () => repository.renameFile('f-1', 'brand.png'),
+    ).thenThrow(Exception('Connection timed out'));
+
+    expect(
+      () => notifier().rename(_file, 'brand.png'),
+      throwsA(isA<Exception>()),
+    );
+    expect(container.read(fileRenamesProvider), isEmpty);
+  });
 }

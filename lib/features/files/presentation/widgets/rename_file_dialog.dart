@@ -54,14 +54,21 @@ class _RenameFileDialogState extends ConsumerState<RenameFileDialog> {
       Navigator.of(context).pop();
       return;
     }
-    final error = await ref
-        .read(fileRenamesProvider.notifier)
-        .rename(widget.file, name);
-    if (!mounted) return;
-    if (error == null) {
-      Navigator.of(context).pop(name);
-    } else {
-      setState(() => _error = error);
+    try {
+      final error = await ref
+          .read(fileRenamesProvider.notifier)
+          .rename(widget.file, name);
+      if (!mounted) return;
+      if (error == null) {
+        Navigator.of(context).pop(name);
+      } else {
+        setState(() => _error = error);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _error = 'Failed to rename file. Please check your connection.',
+      );
     }
   }
 

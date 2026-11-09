@@ -1,6 +1,8 @@
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
+import 'composer_mentions.dart';
+
 class MentionSuggestionList extends StatefulWidget {
   final List<DmParticipant> suggestions;
   final String query;
@@ -113,6 +115,12 @@ class _MentionSuggestionListState extends State<MentionSuggestionList> {
                 final p = suggestions[index];
                 final initial = avatarInitial(p.username);
                 final isSelected = index == widget.selectedIndex;
+                final isChannel = isChannelMention(p);
+                // @channel notifies everyone, so it says so instead of an
+                // email, like web.
+                final secondary = isChannel
+                    ? 'Notify everyone in this channel'
+                    : p.email;
                 // One announced, actionable item per person (Ziki #590).
                 return Semantics(
                   key: isSelected ? _selectedRowKey : null,
@@ -134,24 +142,35 @@ class _MentionSuggestionListState extends State<MentionSuggestionList> {
                       ),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            radius: 14,
-                            backgroundColor: colors.primary,
-                            backgroundImage:
-                                p.avatarUrl != null && p.avatarUrl!.isNotEmpty
-                                ? NetworkImage(p.avatarUrl!)
-                                : null,
-                            child: p.avatarUrl == null || p.avatarUrl!.isEmpty
-                                ? Text(
-                                    initial,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  )
-                                : null,
-                          ),
+                          if (isChannel)
+                            CircleAvatar(
+                              radius: 14,
+                              backgroundColor: colors.primary,
+                              child: const Icon(
+                                Icons.campaign_outlined,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            )
+                          else
+                            CircleAvatar(
+                              radius: 14,
+                              backgroundColor: colors.primary,
+                              backgroundImage:
+                                  p.avatarUrl != null && p.avatarUrl!.isNotEmpty
+                                  ? NetworkImage(p.avatarUrl!)
+                                  : null,
+                              child: p.avatarUrl == null || p.avatarUrl!.isEmpty
+                                  ? Text(
+                                      initial,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    )
+                                  : null,
+                            ),
                           const SizedBox(width: 10),
                           // Long usernames and emails are ellipsized instead
                           // of overflowing the row.
@@ -170,9 +189,9 @@ class _MentionSuggestionListState extends State<MentionSuggestionList> {
                                     fontSize: 13,
                                   ),
                                 ),
-                                if (p.email.isNotEmpty)
+                                if (secondary.isNotEmpty)
                                   Text(
-                                    p.email,
+                                    secondary,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
