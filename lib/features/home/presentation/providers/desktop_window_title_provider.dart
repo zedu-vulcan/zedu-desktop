@@ -25,6 +25,23 @@ String _formatChannelTitle(String name) {
   return clean[0].toUpperCase() + clean.substring(1);
 }
 
+bool _isChannelMatch(Channel c, String? activeId) {
+  if (activeId == null) return false;
+  if (c.id == activeId || c.name == activeId) return true;
+  if (activeId == 'general' && c.name.toLowerCase() == 'general') return true;
+  final cleanName = c.name.startsWith('#')
+      ? c.name.substring(1).trim()
+      : c.name.trim();
+  final cleanActive = activeId.startsWith('#')
+      ? activeId.substring(1).trim()
+      : activeId.trim();
+  if (cleanName.isNotEmpty &&
+      cleanName.toLowerCase() == cleanActive.toLowerCase()) {
+    return true;
+  }
+  return false;
+}
+
 final desktopWindowTitleProvider = Provider<String>((ref) {
   final isAuthenticated = ref.watch(
     authNotifierProvider.select((s) => s.status == AuthStatus.authenticated),
@@ -40,16 +57,12 @@ final desktopWindowTitleProvider = Provider<String>((ref) {
   final channels = ref.watch(channelProvider).value ?? const [];
   final dms = ref.watch(dmListProvider).value ?? const [];
   final selectedDm = ref.watch(selectedDmProvider);
-  final groups = ref.watch(groupDmProvider);
 
   String? contextName;
   switch (activeChat.type) {
     case ActiveChatType.channel:
       final ch = channels.firstWhere(
-        (c) =>
-            c.id == activeChat.id ||
-            c.name.toLowerCase() == activeChat.id?.toLowerCase() ||
-            (activeChat.id == 'general' && c.name.toLowerCase() == 'general'),
+        (c) => _isChannelMatch(c, activeChat.id),
         orElse: () => Channel(
           id: activeChat.id ?? 'general',
           name: activeChat.id == 'general' || activeChat.id == null
@@ -83,11 +96,7 @@ final desktopWindowTitleProvider = Provider<String>((ref) {
       break;
 
     case ActiveChatType.groupDm:
-      // Name the open group, like channels and DMs; fall back only when the
-      // group isn't in the list (#2750).
-      final group = groups.where((g) => g.id == activeChat.id).firstOrNull;
-      final groupName = group?.name.trim() ?? '';
-      contextName = groupName.isNotEmpty ? groupName : 'Group Chat';
+      contextName = 'Group Chat';
       break;
 
     case ActiveChatType.channelDirectory:
@@ -104,9 +113,7 @@ final desktopWindowTitleProvider = Provider<String>((ref) {
     if (c.archived) continue;
     final isActive =
         activeChat.type == ActiveChatType.channel &&
-        (c.id == activeChat.id ||
-            c.name.toLowerCase() == activeChat.id?.toLowerCase() ||
-            (activeChat.id == 'general' && c.name.toLowerCase() == 'general'));
+        _isChannelMatch(c, activeChat.id);
     if (!isActive) {
       unreadCount += c.unreadCount.toInt();
     }
@@ -118,14 +125,6 @@ final desktopWindowTitleProvider = Provider<String>((ref) {
         (d.participantId == activeChat.id || d.channelId == activeChat.id);
     if (!isActive) {
       unreadCount += d.unreadCount.toInt();
-    }
-  }
-
-  for (final g in groups) {
-    final isActive =
-        activeChat.type == ActiveChatType.groupDm && g.id == activeChat.id;
-    if (!isActive) {
-      unreadCount += g.unreadCount;
     }
   }
 

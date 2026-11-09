@@ -18,6 +18,9 @@ abstract class ChannelRemoteDataSource {
     String? description,
   });
   Future<void> archiveChannel(String channelId, bool archived);
+
+  /// The organisation's archived channels the user can see.
+  Future<List<Channel>> fetchArchivedChannels(String orgId);
   Future<void> leaveChannel(String channelId);
   Future<void> joinChannel(String channelId);
   Future<List<String>> fetchOrganisationMemberIds(String orgId);
@@ -28,8 +31,42 @@ abstract class ChannelRemoteDataSource {
     required List<String> userIds,
   });
 
-  /// The latest messages of a channel, newest first.
-  Future<List<ChannelMessage>> fetchChannelMessages(String channelId);
+  /// How many messages one page of a channel's history holds.
+  static const messagePageSize = 50;
+
+  /// One page of a channel's messages, newest first. Page 1 is the newest.
+  Future<ChannelMessagePage> fetchChannelMessages(
+    String channelId, {
+    int page = 1,
+    int limit = messagePageSize,
+  });
+
+  /// Replaces the text of the message with [threadId] in [channelId].
+  Future<void> editChannelMessage({
+    required String channelId,
+    required String threadId,
+    required String content,
+  });
+
+  /// Deletes the message with [threadId] in [channelId].
+  Future<void> deleteChannelMessage({
+    required String channelId,
+    required String threadId,
+  });
+
+  /// Usernames of the users who reacted with [reactionId] on [threadId].
+  Future<List<String>> fetchReactionUsers({
+    required String reactionId,
+    required String threadId,
+  });
+
+  /// Adds the current user's [emoji] reaction to [threadId], or removes it
+  /// if they have already reacted. Returns whether the user reacted now.
+  Future<bool> toggleReaction({
+    required String channelId,
+    required String threadId,
+    required String emoji,
+  });
 
   /// Stars the channel for this user, or unstars it if it is already starred.
   /// Returns whether it is starred now.
@@ -37,10 +74,25 @@ abstract class ChannelRemoteDataSource {
     required String orgId,
     required String channelId,
   });
+
+  /// Starts an export of the channel's history, or returns the one that is
+  /// already running.
+  Future<ChannelExport> startExport(String channelId);
+
+  /// The latest export of the channel for this user.
+  Future<ChannelExport> fetchExportStatus(String channelId);
 }
+
+/// The mock build has no server behind it, and staging rejects its token, so
+/// writes fail here instead of sending a request that signs the user out.
+const _mockBuildFailure = ApiFailure(
+  message: 'Not available in the mock build.',
+  kind: ApiFailureKind.client,
+);
 
 class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
   final ApiBaseService apiBaseService;
+  final AppConfig config;
 
   /// Page size for the paginated member lists (the backend default is 20).
   static const memberPageSize = 100;
@@ -48,18 +100,43 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
   /// Stops paging a broken or endless member list after this many pages.
   static const maxMemberPages = 50;
 
-  ChannelRemoteDataSourceImpl({required this.apiBaseService});
+  /// Page size for the organisation's channel list (the backend default
+  /// is 20).
+  static const channelPageSize = 100;
 
+  /// Stops paging a broken or endless channel list after this many pages.
+  static const maxChannelPages = 50;
+
+  ChannelRemoteDataSourceImpl({
+    required this.apiBaseService,
+    required this.config,
+  });
+
+  /// Every channel in the organisation. The list is paginated, so each page
+  /// is fetched until the last one the server reports, a short page, or the
+  /// page cap; the channels loaded so far are kept in that last case.
   @override
   Future<List<Channel>> fetchChannels(String orgId) async {
-    final response = await apiBaseService.get<Map<String, dynamic>>(
-      path: '/organisations/$orgId/channels',
-    );
-    final data = response.data['data'] as List?;
-    if (data == null) return [];
-    final channels = data
-        .map((e) => Channel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    if (config.usesMockData) return const [];
+    final channels = <Channel>[];
+    for (var page = 1; page <= maxChannelPages; page++) {
+      final response = await apiBaseService.get<Map<String, dynamic>>(
+        path: '/organisations/$orgId/channels',
+        queryParameters: {'page': page, 'limit': channelPageSize},
+      );
+      final data = response.data['data'] as List?;
+      if (data == null || data.isEmpty) break;
+      channels.addAll(
+        data.map((e) => Channel.fromJson(e as Map<String, dynamic>)),
+      );
+
+      final pagination = response.data['pagination'];
+      final totalPages = pagination is Map ? pagination['total_pages'] : null;
+      final isLast = totalPages is int
+          ? page >= totalPages
+          : data.length < channelPageSize;
+      if (isLast) break;
+    }
     // The browse-all endpoint always returns unread_count 0. The
     // user-channels endpoint fills it, so merge those counts in. A failure
     // there must not fail the whole list: the title just counts DMs then.
@@ -80,6 +157,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
 
   @override
   Future<Map<String, int>> fetchChannelUnreadCounts(String orgId) async {
+    if (config.usesMockData) return const {};
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/organisations/$orgId/user-channels',
     );
@@ -99,6 +177,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     required String orgId,
     required String channelId,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final response = await apiBaseService.post<Map<String, dynamic>>(
       path: '/organisations/$orgId/channels/$channelId/star',
     );
@@ -119,6 +198,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     required bool isPrivate,
     String? topic,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final body = {
       'name': name,
       'description': description,
@@ -142,6 +222,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     String? topic,
     String? description,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final data = <String, dynamic>{};
     if (topic != null) data['topic'] = topic;
     if (description != null) data['description'] = description;
@@ -156,6 +237,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
 
   @override
   Future<void> archiveChannel(String channelId, bool archived) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.put<Map<String, dynamic>>(
       path: '/channels/$channelId/archive',
       data: {'archived': archived},
@@ -163,7 +245,21 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
   }
 
   @override
+  Future<List<Channel>> fetchArchivedChannels(String orgId) async {
+    if (config.usesMockData) return const [];
+    final response = await apiBaseService.get<Map<String, dynamic>>(
+      path: '/organisations/$orgId/channels/archived',
+    );
+    final data = response.data['data'] as List?;
+    if (data == null) return [];
+    return data
+        .map((e) => Channel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
   Future<void> leaveChannel(String channelId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.post<Map<String, dynamic>>(
       path: '/channels/$channelId/leave',
     );
@@ -171,6 +267,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
 
   @override
   Future<void> joinChannel(String channelId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.post<Map<String, dynamic>>(
       path: '/channels/$channelId/join',
       data: const <String, dynamic>{},
@@ -178,18 +275,47 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
   }
 
   @override
+  Future<ChannelExport> startExport(String channelId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
+    final response = await apiBaseService.post<Map<String, dynamic>>(
+      path: '/channels/$channelId/export',
+    );
+    return _exportFrom(response.data);
+  }
+
+  @override
+  Future<ChannelExport> fetchExportStatus(String channelId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
+    final response = await apiBaseService.get<Map<String, dynamic>>(
+      path: '/channels/$channelId/export/status',
+    );
+    return _exportFrom(response.data);
+  }
+
+  static ChannelExport _exportFrom(Map<String, dynamic>? body) {
+    final data = body?['data'];
+    if (data is! Map<String, dynamic>) {
+      throw Exception('No export returned for the channel');
+    }
+    return ChannelExport.fromJson(data);
+  }
+
+  @override
   Future<List<String>> fetchOrganisationMemberIds(String orgId) {
+    if (config.usesMockData) return Future.value(const []);
     // People only: this endpoint leaves bots out unless include_bots=true.
     return _fetchAllMemberIds('/organisations/$orgId/users');
   }
 
   @override
   Future<List<String>> fetchChannelMemberIds(String channelId) {
+    if (config.usesMockData) return Future.value(const []);
     return _fetchAllMemberIds('/channels/$channelId/users');
   }
 
   @override
   Future<List<DmParticipant>> fetchChannelMembers(String channelId) async {
+    if (config.usesMockData) return const [];
     final members = await _fetchAllMembers('/channels/$channelId/users');
     return [
       for (final member in members)
@@ -211,6 +337,7 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     required String channelId,
     required List<String> userIds,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.post<Map<String, dynamic>>(
       path: '/channels/add-multiple',
       data: {'channel_id': channelId, 'user_ids': userIds},
@@ -218,18 +345,125 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
   }
 
   @override
-  Future<List<ChannelMessage>> fetchChannelMessages(String channelId) async {
+  Future<void> editChannelMessage({
+    required String channelId,
+    required String threadId,
+    required String content,
+  }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
+    await apiBaseService.put<Map<String, dynamic>>(
+      path: '/threads/$threadId/channels/$channelId',
+      data: {'content': content},
+    );
+  }
+
+  @override
+  Future<void> deleteChannelMessage({
+    required String channelId,
+    required String threadId,
+  }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
+    await apiBaseService.delete<Map<String, dynamic>>(
+      path: '/threads/$threadId/channels/$channelId',
+    );
+  }
+
+  @override
+  Future<ChannelMessagePage> fetchChannelMessages(
+    String channelId, {
+    int page = 1,
+    int limit = ChannelRemoteDataSource.messagePageSize,
+  }) async {
+    if (config.usesMockData) {
+      return const ChannelMessagePage(messages: [], hasMore: false);
+    }
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/threads/channels/$channelId',
-      queryParameters: {'page': 1, 'limit': 50},
+      queryParameters: {'page': page, 'limit': limit},
     );
     final data = response.data['data'];
-    if (data == null) return const [];
+    if (data == null) {
+      return const ChannelMessagePage(messages: [], hasMore: false);
+    }
     // A wrong shape throws, so the list shows its retry state.
-    return (data as List)
+    final messages = (data as List)
         .cast<Map<String, dynamic>>()
         .map(ChannelMessage.fromJson)
         .toList();
+    return ChannelMessagePage(
+      messages: messages,
+      hasMore: _hasMorePages(
+        response.data['pagination'],
+        page: page,
+        limit: limit,
+        received: messages.length,
+      ),
+    );
+  }
+
+  /// Reads the response's pagination block. Without a usable one, a full page
+  /// means there may be another, and the next request settles it: an empty
+  /// page ends the list.
+  bool _hasMorePages(
+    Object? pagination, {
+    required int page,
+    required int limit,
+    required int received,
+  }) {
+    if (pagination is Map) {
+      final hasMore =
+          pagination['has_more'] ??
+          pagination['has_next'] ??
+          pagination['hasNext'];
+      if (hasMore is bool) return hasMore;
+      final totalPages = int.tryParse(
+        '${pagination['total_pages'] ?? pagination['total_pages_count'] ?? pagination['totalPages']}',
+      );
+      if (totalPages != null) return page < totalPages;
+    }
+    return received >= limit;
+  }
+
+  @override
+  Future<List<String>> fetchReactionUsers({
+    required String reactionId,
+    required String threadId,
+  }) async {
+    if (config.usesMockData) return const [];
+    final response = await apiBaseService.get<Map<String, dynamic>>(
+      path: '/reactions/$reactionId/thread/$threadId',
+    );
+    final data = response.data['data'] as Map<String, dynamic>?;
+    final usernames = data?['usernames'] as List?;
+    if (usernames == null) return [];
+    return [
+      // The backend sends either plain username strings or user objects.
+      for (final entry in usernames)
+        if (entry is String && entry.trim().isNotEmpty)
+          entry.trim()
+        else if (entry is Map<String, dynamic>)
+          ..._usernameFromUserObject(entry),
+    ];
+  }
+
+  @override
+  Future<bool> toggleReaction({
+    required String channelId,
+    required String threadId,
+    required String emoji,
+  }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
+    final response = await apiBaseService.post<Map<String, dynamic>>(
+      path: '/reactions/$channelId',
+      data: {'reaction': emoji, 'thread_id': threadId, 'type': 'thread'},
+    );
+    final data = response.data['data'];
+    // Toggle semantics: the user is removed when data comes back null/empty.
+    if (data is Map<String, dynamic>) {
+      final reaction = data['reaction']?.toString() ?? '';
+      if (reaction == emoji) return true;
+    }
+    return false;
   }
 
   // The channel users route nests username and avatar_url under profile.
@@ -239,6 +473,11 @@ class ChannelRemoteDataSourceImpl implements ChannelRemoteDataSource {
     if (nested is String && nested.isNotEmpty) return nested;
     final topLevel = member[field];
     return topLevel is String ? topLevel : '';
+  }
+
+  List<String> _usernameFromUserObject(Map<String, dynamic> user) {
+    final username = _memberField(user, 'username').trim();
+    return username.isEmpty ? const [] : [username];
   }
 
   Future<List<String>> _fetchAllMemberIds(String path) async {

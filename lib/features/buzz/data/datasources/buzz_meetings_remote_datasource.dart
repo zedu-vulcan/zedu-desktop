@@ -7,11 +7,22 @@ abstract class BuzzMeetingsRemoteDataSource {
 /// Creates meetings as the web Buzz page does.
 class BuzzMeetingsRemoteDataSourceImpl implements BuzzMeetingsRemoteDataSource {
   final ApiBaseService apiBaseService;
+  final AppConfig config;
 
-  BuzzMeetingsRemoteDataSourceImpl({required this.apiBaseService});
+  BuzzMeetingsRemoteDataSourceImpl({
+    required this.apiBaseService,
+    required this.config,
+  });
 
   @override
   Future<String> createMeeting() async {
+    if (config.usesMockData) {
+      throw const ApiFailure(
+        message: 'Meetings are not available in the mock build.',
+        path: '/buzz/org/create',
+        kind: ApiFailureKind.client,
+      );
+    }
     final response = await apiBaseService.post<Map<String, dynamic>>(
       path: '/buzz/org/create',
       data: const <String, dynamic>{},

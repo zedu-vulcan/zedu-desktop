@@ -35,6 +35,8 @@ class UserManagementSection extends StatefulWidget {
 
 class _UserManagementSectionState extends State<UserManagementSection> {
   final _searchController = TextEditingController();
+  final _pageJumpController = TextEditingController();
+  final _tableScrollController = ScrollController();
   String _roleFilter = 'All Roles';
   int _currentPage = 1;
   static const int _pageSize = 10;
@@ -43,7 +45,22 @@ class _UserManagementSectionState extends State<UserManagementSection> {
   @override
   void dispose() {
     _searchController.dispose();
+    _pageJumpController.dispose();
+    _tableScrollController.dispose();
     super.dispose();
+  }
+
+  void _jumpToPage(String value, int totalPages) {
+    final page = int.tryParse(value.trim());
+    if (page != null) {
+      final clamped = page.clamp(1, totalPages);
+      setState(() {
+        _currentPage = clamped;
+      });
+      _pageJumpController.text = '$clamped';
+    } else {
+      _pageJumpController.text = '$_currentPage';
+    }
   }
 
   @override
@@ -91,6 +108,18 @@ class _UserManagementSectionState extends State<UserManagementSection> {
             onPressed: () => _showInviteDialog(context, widget.onInvite),
           ),
         ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: widget.isSaving
+              ? null
+              : () => showDialog<void>(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => const BulkInviteDialog(),
+                ),
+          icon: const Icon(Icons.group_add_outlined),
+          label: const Text('Invite multiple people'),
+        ),
         const SizedBox(height: 34),
         Row(
           children: [
@@ -103,6 +132,7 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                   setState(() {
                     _currentTab = _UserManagementTab.members;
                     _currentPage = 1;
+                    _pageJumpController.text = '1';
                   });
                 }
               },
@@ -117,6 +147,7 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                   setState(() {
                     _currentTab = _UserManagementTab.invites;
                     _currentPage = 1;
+                    _pageJumpController.text = '1';
                   });
                 }
               },
@@ -131,30 +162,29 @@ class _UserManagementSectionState extends State<UserManagementSection> {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 300,
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (_) => setState(() {
-                            _currentPage = 1;
-                          }),
-                          decoration: InputDecoration(
-                            hintText: 'Search by name or email',
-                            prefixIcon: const Icon(Icons.search, size: 18),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 12,
-                            ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 480;
+                      final searchField = TextField(
+                        controller: _searchController,
+                        onChanged: (_) => setState(() {
+                          _currentPage = 1;
+                          _pageJumpController.text = '1';
+                        }),
+                        decoration: InputDecoration(
+                          hintText: 'Search by name or email',
+                          prefixIcon: const Icon(Icons.search, size: 18),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      DropdownButton<String>(
+                      );
+
+                      final roleDropdown = DropdownButton<String>(
                         value: _roleFilter,
                         underline: const SizedBox(),
                         items: [
@@ -168,9 +198,38 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                         onChanged: (value) => setState(() {
                           _roleFilter = value ?? 'All Roles';
                           _currentPage = 1;
+                          _pageJumpController.text = '1';
                         }),
-                      ),
-                    ],
+                      );
+
+                      if (isNarrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            searchField,
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: roleDropdown,
+                            ),
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Flexible(
+                            fit: FlexFit.loose,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 320),
+                              child: searchField,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          roleDropdown,
+                        ],
+                      );
+                    },
                   ),
                 ),
                 if (filtered.isEmpty)
@@ -225,65 +284,111 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                     ),
                   )
                 else
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 880),
-                      child: DataTable(
-                        headingRowColor: WidgetStateProperty.all(
-                          const Color(0xFFFAFAFA),
-                        ),
-                        columns: const [
-                          DataColumn(label: Text('Email Address')),
-                          DataColumn(label: Text('Role')),
-                          DataColumn(label: Text('Date Joined')),
-                          DataColumn(label: Text('Status')),
-                          DataColumn(label: Text('Actions')),
-                        ],
-                        rows: paginatedMembers.map((member) {
-                          return DataRow(
-                            cells: [
-                              DataCell(_MemberIdentity(email: member.email)),
-                              DataCell(Text(member.role)),
-                              DataCell(
-                                Text(_formatDateJoined(member.dateJoined)),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Scrollbar(
+                        controller: _tableScrollController,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _tableScrollController,
+                          scrollDirection: Axis.horizontal,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: constraints.maxWidth < 880
+                                  ? 880
+                                  : constraints.maxWidth,
+                            ),
+                            child: DataTable(
+                              headingRowColor: WidgetStateProperty.all(
+                                const Color(0xFFFAFAFA),
                               ),
-                              DataCell(
-                                ProfileStatusPill(status: member.status.name),
-                              ),
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SquareIconButton(
-                                      icon: Icons.edit_outlined,
-                                      tooltip: 'Edit member',
-                                      size: 28,
-                                      onTap: () => _showMemberDialog(
-                                        context,
-                                        member,
-                                        widget.onUpdate,
+                              columns: const [
+                                DataColumn(label: Text('Email Address')),
+                                DataColumn(label: Text('Role')),
+                                DataColumn(label: Text('Date Joined')),
+                                DataColumn(label: Text('Status')),
+                                DataColumn(label: Text('Actions')),
+                              ],
+                              rows: paginatedMembers.map((member) {
+                                return DataRow(
+                                  cells: [
+                                    DataCell(
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 220,
+                                          minWidth: 140,
+                                        ),
+                                        child: _MemberIdentity(
+                                          email: member.email,
+                                        ),
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    SquareIconButton(
-                                      icon: Icons.delete_outline,
-                                      tooltip: 'Remove member',
-                                      size: 28,
-                                      onTap: () => _confirmRemove(
-                                        context,
-                                        member.email,
-                                        () async => widget.onRemove(member.id),
+                                    DataCell(
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 130,
+                                        ),
+                                        child: Text(
+                                          member.role,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 130,
+                                        ),
+                                        child: Text(
+                                          _formatDateJoined(member.dateJoined),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      ProfileStatusPill(
+                                        status: member.status.name,
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SquareIconButton(
+                                            icon: Icons.edit_outlined,
+                                            tooltip: 'Edit member',
+                                            size: 28,
+                                            onTap: () => _showMemberDialog(
+                                              context,
+                                              member,
+                                              widget.onUpdate,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          SquareIconButton(
+                                            icon: Icons.delete_outline,
+                                            tooltip: 'Remove member',
+                                            size: 28,
+                                            onTap: () => _confirmRemove(
+                                              context,
+                                              member.email,
+                                              () async =>
+                                                  widget.onRemove(member.id),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
-                                ),
-                              ),
-                            ],
-                          );
-                        }).toList(),
-                      ),
-                    ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 if (totalPages > 1) ...[
                   const Divider(height: 1),
@@ -297,16 +402,94 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                           height: 36,
                           disabled: currentPage <= 1,
                           onPressed: currentPage > 1
-                              ? () => setState(
-                                  () => _currentPage = currentPage - 1,
-                                )
+                              ? () {
+                                  final prev = currentPage - 1;
+                                  setState(() => _currentPage = prev);
+                                  _pageJumpController.text = '$prev';
+                                }
                               : null,
                         ),
                         const Spacer(),
-                        Text(
-                          '$currentPage',
-                          key: const Key('user_management_page_number'),
-                          style: context.textTheme.bodySmall,
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$currentPage',
+                              key: const Key('user_management_page_number'),
+                              style: context.textTheme.bodySmall,
+                            ),
+                            Text(
+                              ' of $totalPages',
+                              style: context.textTheme.bodySmall?.copyWith(
+                                color: context.colors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              'Go to page:',
+                              style: context.textTheme.bodySmall?.copyWith(
+                                color: context.colors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 52,
+                              height: 36,
+                              child: TextField(
+                                key: const Key(
+                                  'user_management_page_jump_input',
+                                ),
+                                controller: _pageJumpController,
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                style: context.textTheme.bodySmall,
+                                decoration: InputDecoration(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 6,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: BorderSide(
+                                      color: context.colors.divider,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: BorderSide(
+                                      color: context.colors.divider,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                    borderSide: BorderSide(
+                                      color: context.colors.primary,
+                                    ),
+                                  ),
+                                  hintText: '$currentPage',
+                                  hintStyle: context.textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: context.colors.textHint,
+                                      ),
+                                ),
+                                onSubmitted: (val) =>
+                                    _jumpToPage(val, totalPages),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            AppButton.outlined(
+                              key: const Key(
+                                'user_management_page_jump_button',
+                              ),
+                              label: 'Go',
+                              expand: false,
+                              height: 36,
+                              onPressed: () => _jumpToPage(
+                                _pageJumpController.text,
+                                totalPages,
+                              ),
+                            ),
+                          ],
                         ),
                         const Spacer(),
                         AppButton.outlined(
@@ -315,9 +498,11 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                           height: 36,
                           disabled: currentPage >= totalPages,
                           onPressed: currentPage < totalPages
-                              ? () => setState(
-                                  () => _currentPage = currentPage + 1,
-                                )
+                              ? () {
+                                  final next = currentPage + 1;
+                                  setState(() => _currentPage = next);
+                                  _pageJumpController.text = '$next';
+                                }
                               : null,
                         ),
                       ],
@@ -413,6 +598,7 @@ class _UserManagementSectionState extends State<UserManagementSection> {
                                         context,
                                         invite.email,
                                         () async => widget.onRemove(invite.id),
+                                        pendingInvite: true,
                                       ),
                                     ),
                                   ],
@@ -444,12 +630,15 @@ class _UserManagementSectionState extends State<UserManagementSection> {
   Future<void> _confirmRemove(
     BuildContext context,
     String email,
-    Future<void> Function() onConfirm,
-  ) => showProfileConfirmDialog(
+    Future<void> Function() onConfirm, {
+    bool pendingInvite = false,
+  }) => showProfileConfirmDialog(
     context,
-    title: 'Remove team member?',
-    message: '$email will lose access to this organization.',
-    confirmLabel: 'Remove member',
+    title: pendingInvite ? 'Remove invitation?' : 'Remove team member?',
+    message: pendingInvite
+        ? 'The invitation to $email will be cancelled. They will not join this organization.'
+        : '$email will lose access to this organization.',
+    confirmLabel: pendingInvite ? 'Remove invite' : 'Remove member',
     onConfirm: onConfirm,
     destructive: true,
   );

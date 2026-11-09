@@ -169,6 +169,35 @@ void main() {
         expect(isHighlighted(tester, 'general'), isFalse);
         expect(isHighlighted(tester, 'random'), isFalse);
       });
+
+      testWidgets(
+        'renders accent indicator bar and distinct hash mark on active channel',
+        (tester) async {
+          await pumpList(tester, channels: FakeChannelNotifier.new);
+
+          // Active channel has an accent DecoratedBox indicator bar
+          final generalItem = find.ancestor(
+            of: find.text('general'),
+            matching: find.byType(Ink),
+          );
+          final indicator = find.descendant(
+            of: generalItem,
+            matching: find.byType(DecoratedBox),
+          );
+          expect(indicator, findsOneWidget);
+
+          // Inactive channel does not have an indicator bar
+          final randomItem = find.ancestor(
+            of: find.text('random'),
+            matching: find.byType(Ink),
+          );
+          final randomIndicator = find.descendant(
+            of: randomItem,
+            matching: find.byType(DecoratedBox),
+          );
+          expect(randomIndicator, findsNothing);
+        },
+      );
     });
 
     testWidgets('tapping a channel opens it', (tester) async {

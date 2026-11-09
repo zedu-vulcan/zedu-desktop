@@ -2,7 +2,10 @@ import 'package:zedu/features/features.dart';
 
 import '../../../../../helpers/helpers.dart';
 
-Widget _viewer({ImageDownloadCallback? onDownload}) {
+Widget _viewer({
+  ImageSavePathPicker? onPickSavePath,
+  ImageDownloadCallback? onDownload,
+}) {
   return MaterialApp(
     home: Builder(
       builder: (context) => Scaffold(
@@ -14,6 +17,7 @@ Widget _viewer({ImageDownloadCallback? onDownload}) {
                 builder: (_) => ImageAttachmentViewer(
                   imageUrl: 'https://example.com/photo.png',
                   fileName: 'photo.png',
+                  onPickSavePath: onPickSavePath,
                   onDownload: onDownload,
                 ),
               ),
@@ -28,9 +32,12 @@ Widget _viewer({ImageDownloadCallback? onDownload}) {
 
 Future<void> _openViewer(
   WidgetTester tester, {
+  ImageSavePathPicker? onPickSavePath,
   ImageDownloadCallback? onDownload,
 }) async {
-  await tester.pumpWidget(_viewer(onDownload: onDownload));
+  await tester.pumpWidget(
+    _viewer(onPickSavePath: onPickSavePath, onDownload: onDownload),
+  );
   await tester.tap(find.text('Open image'));
   await tester.pumpAndSettle();
 }
@@ -123,14 +130,18 @@ void main() {
     expect(tester.widget<RotatedBox>(find.byType(RotatedBox)).quarterTurns, 1);
   });
 
-  testWidgets('save uses the download callback and confirms', (tester) async {
-    String? downloadedUrl;
-    String? downloadedName;
+  testWidgets('save asks for the path before downloading and confirms', (
+    tester,
+  ) async {
+    final calls = <String>[];
     await _openViewer(
       tester,
-      onDownload: (url, fileName) async {
-        downloadedUrl = url;
-        downloadedName = fileName;
+      onPickSavePath: (fileName) async {
+        calls.add('pick $fileName');
+        return '/tmp/chosen.png';
+      },
+      onDownload: (url, path) async {
+        calls.add('download $url $path');
         return true;
       },
     );
@@ -139,15 +150,42 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(downloadedUrl, 'https://example.com/photo.png');
-    expect(downloadedName, 'photo.png');
+    expect(calls, [
+      'pick photo.png',
+      'download https://example.com/photo.png /tmp/chosen.png',
+    ]);
     expect(find.text('Saved photo.png'), findsOneWidget);
+  });
+
+  testWidgets('cancelling the save dialog shows no message', (tester) async {
+    var downloaded = false;
+    await _openViewer(
+      tester,
+      onPickSavePath: (_) async => null,
+      onDownload: (_, _) async {
+        downloaded = true;
+        return true;
+      },
+    );
+
+    await tester.tap(find.byTooltip('Save image'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(downloaded, isFalse);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(find.textContaining('Could not save'), findsNothing);
+    expect(find.byIcon(Icons.download_rounded), findsOneWidget);
   });
 
   testWidgets('save reports a failure without closing the viewer', (
     tester,
   ) async {
-    await _openViewer(tester, onDownload: (_, _) async => false);
+    await _openViewer(
+      tester,
+      onPickSavePath: (_) async => '/tmp/chosen.png',
+      onDownload: (_, _) async => false,
+    );
 
     await tester.tap(find.byTooltip('Save image'));
     await tester.pump();

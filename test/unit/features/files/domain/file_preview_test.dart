@@ -3,6 +3,32 @@ import 'package:zedu/features/features.dart';
 import '../../../../helpers/helpers.dart';
 
 void main() {
+  test('image classification shares preview support including BMP and SVG', () {
+    for (final type in ['bmp', 'BMP', 'svg', 'SVG', 'png', 'jpg', 'webp']) {
+      final file = WorkspaceFile(
+        id: type,
+        name: 'picture.$type',
+        fileType: type,
+      );
+      expect(file.isImage, isTrue, reason: type);
+    }
+    expect(
+      const WorkspaceFile(
+        id: 'svg',
+        name: 'vector',
+        mimeType: 'IMAGE/SVG+XML',
+      ).isImage,
+      isTrue,
+    );
+    expect(
+      const WorkspaceFile(id: 'pdf', name: 'document', fileType: 'pdf').isImage,
+      isFalse,
+    );
+    expect(
+      const WorkspaceFile(id: 'txt', name: 'notes', fileType: 'txt').isImage,
+      isFalse,
+    );
+  });
   FilePreviewKind kind(String name, {String type = '', String mime = ''}) =>
       FilePreviewKind.of(
         WorkspaceFile(id: 'f', name: name, fileType: type, mimeType: mime),

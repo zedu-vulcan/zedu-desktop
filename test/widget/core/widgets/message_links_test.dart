@@ -57,6 +57,42 @@ void main() {
     });
   });
 
+  group('extractMessageLinks', () {
+    test('finds links in plain text, Markdown, and HTML', () {
+      expect(
+        extractMessageLinks(
+          'Plain https://plain.example/a. '
+          '[Docs](https://docs.example/guide) '
+          '<a href="https://html.example/search?a=1&amp;b=2">site</a>',
+        ).map((uri) => uri.toString()),
+        [
+          'https://plain.example/a',
+          'https://docs.example/guide',
+          'https://html.example/search?a=1&b=2',
+        ],
+      );
+    });
+
+    test('normalizes www links and removes duplicates', () {
+      expect(
+        extractMessageLinks(
+          'www.example.com and https://www.example.com and WWW.EXAMPLE.COM',
+        ).map((uri) => uri.toString()),
+        ['https://www.example.com'],
+      );
+    });
+
+    test('ignores unsupported and embedded schemes', () {
+      expect(
+        extractMessageLinks(
+          'file:///tmp/a javascript:alert(1) '
+          'javascript:https://unsafe.example mailto:a@example.com',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('MessageLinks.span', () {
     const style = TextStyle(fontSize: 14);
 
@@ -149,12 +185,9 @@ void main() {
     });
 
     test('keeps formatted children inside the link', () {
-      final span = links.link(
-        '',
-        'https://example.com',
-        style,
-        [const TextSpan(text: '**docs**')],
-      );
+      final span = links.link('', 'https://example.com', style, [
+        const TextSpan(text: '**docs**'),
+      ]);
       expect(span.toPlainText(), '**docs**');
       expect(span.recognizer, isA<TapGestureRecognizer>());
     });

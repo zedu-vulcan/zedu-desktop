@@ -111,7 +111,9 @@ class _OrganizationSectionState extends State<OrganizationSection> {
           ),
         ),
         const SizedBox(height: 48),
-        Row(
+        Wrap(
+          spacing: 16,
+          runSpacing: 12,
           children: [
             AppButton.outlined(
               label: 'Sign out of workspace',
@@ -125,14 +127,13 @@ class _OrganizationSectionState extends State<OrganizationSection> {
               loading: _pending == _OrganizationAction.leave,
               onPressed: () => _confirmLeave(context),
             ),
-            const SizedBox(width: 16),
             AppButton.outlined(
               label: 'Delete organization',
               expand: false,
               height: 44,
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFEF4444),
-                side: const BorderSide(color: Color(0xFFEF4444)),
+                foregroundColor: context.colors.error,
+                side: BorderSide(color: context.colors.error),
                 padding: const EdgeInsets.symmetric(horizontal: 18),
               ),
               loading: _pending == _OrganizationAction.delete,

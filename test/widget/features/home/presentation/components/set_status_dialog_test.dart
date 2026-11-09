@@ -327,6 +327,18 @@ void main() {
       expect(notifier.savedTimeout, StatusTimeout.dontRemove);
       expect(notifier.savedPauseNotifications, isTrue);
     });
+
+    testWidgets('pressing Enter in status field saves status', (tester) async {
+      final notifier = _FakeAuthNotifier(_signedInWith(UserStatus.empty));
+      await _pumpDialog(tester, notifier: () => notifier);
+
+      final textField = find.byType(TextField);
+      await tester.enterText(textField, 'Deep work');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(notifier.savedTimeout, isNotNull);
+    });
   });
 
   group('SetStatusDialog cursors', () {

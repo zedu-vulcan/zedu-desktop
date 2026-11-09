@@ -15,6 +15,10 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
   bool _isLoading = false;
   String? _errorMessage;
 
+  /// Set once the person changes the selection, so the helper stays neutral
+  /// until then and only turns red for an incomplete selection afterwards.
+  bool _touched = false;
+
   // Filtered members list
   List<TeamMember> _filteredMembers = [];
   bool _showDropdown = false;
@@ -38,15 +42,21 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
   void _onSearchChanged() {
     final query = _searchController.text.trim().toLowerCase();
     final allMembers = ref.read(userProfileNotifierProvider).teamMembers;
+    final currentUserId = ref.read(authNotifierProvider).user?.id;
 
     setState(() {
       if (query.isEmpty) {
-        // Show all members that are not already selected
+        // Show all members that are not already selected and not the current user
         _filteredMembers = allMembers
-            .where((m) => !_selectedMembers.any((s) => s.id == m.id))
+            .where(
+              (m) =>
+                  m.id != currentUserId &&
+                  !_selectedMembers.any((s) => s.id == m.id),
+            )
             .toList();
       } else {
         _filteredMembers = allMembers.where((m) {
+          if (m.id == currentUserId) return false;
           final isSelected = _selectedMembers.any((s) => s.id == m.id);
           if (isSelected) return false;
 
@@ -69,6 +79,7 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
 
   void _toggleMemberSelection(TeamMember member) {
     setState(() {
+      _touched = true;
       if (_selectedMembers.any((m) => m.id == member.id)) {
         _selectedMembers.removeWhere((m) => m.id == member.id);
       } else {
@@ -89,6 +100,17 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
       return emailPrefix;
     }
     return 'Member';
+  }
+
+  String _getComposerPlaceholder() {
+    if (_selectedMembers.isEmpty) {
+      return 'Select a recipient above to start messaging...';
+    }
+    if (_selectedMembers.length == 1) {
+      final name = _getMemberDisplayName(_selectedMembers.first);
+      return 'Message @$name';
+    }
+    return 'Message group (${_selectedMembers.length} members)...';
   }
 
   String _getMemberInitials(String displayName) {
@@ -563,21 +585,32 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
     final count = _selectedMembers.length;
     final isReady = count >= 2;
 
+    final IconData icon;
+    final Color color;
+    final String text;
+
+    if (isReady) {
+      icon = Icons.check_circle;
+      color = colors.success;
+      text = 'Ready to create conversation! (Selected: $count members)';
+    } else {
+      icon = Icons.info_outline;
+      color = (_touched || _errorMessage != null)
+          ? colors.error
+          : colors.textSecondary;
+      text =
+          'Select at least 2 members to start a group DM (Selected: $count/2)';
+    }
+
     return Row(
       children: [
-        Icon(
-          isReady ? Icons.check_circle : Icons.info_outline,
-          size: 16,
-          color: isReady ? colors.success : colors.error,
-        ),
+        Icon(icon, size: 16, color: color),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            isReady
-                ? 'Ready to create conversation! (Selected: $count members)'
-                : 'Select at least 2 members to start a group DM (Selected: $count/2)',
+            text,
             style: TextStyle(
-              color: isReady ? colors.success : colors.error,
+              color: color,
               fontSize: 13,
               fontWeight: FontWeight.w500,
             ),
@@ -588,12 +621,14 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
   }
 
   Widget _buildBottomMessageEditor(AppPalette colors) {
+    final placeholder = _getComposerPlaceholder();
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      decoration: const BoxDecoration(color: Colors.white),
+      decoration: BoxDecoration(color: colors.onPrimary),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
+          color: colors.onPrimary,
           border: Border.all(color: colors.divider),
           borderRadius: BorderRadius.circular(12),
         ),
@@ -613,10 +648,11 @@ class _NewGroupChatViewState extends ConsumerState<NewGroupChatView> {
               ],
             ),
             Divider(height: 24, color: colors.divider),
-            const TextField(
+            TextField(
               enabled: false, // Disabled during creation screen
               decoration: InputDecoration(
-                hintText: 'Message Ruby - Social Media Handler',
+                hintText: placeholder,
+                hintStyle: TextStyle(color: colors.textHint),
                 border: InputBorder.none,
                 isDense: true,
               ),

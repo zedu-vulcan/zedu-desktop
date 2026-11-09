@@ -134,4 +134,23 @@ void main() {
       equals(sectionContext!.colors.textSecondary),
     );
   });
+
+  testWidgets('colours the initials placeholder with theme tokens', (
+    tester,
+  ) async {
+    await _pump(tester, account);
+
+    final initials = tester.widget<Text>(find.text('AL'));
+    final box = tester.widget<Container>(
+      find
+          .ancestor(of: find.text('AL'), matching: find.byType(Container))
+          .first,
+    );
+
+    expect(initials.style!.color, AppPalette.light.primary);
+    expect(
+      (box.decoration! as BoxDecoration).color,
+      AppPalette.light.primaryBg,
+    );
+  });
 }

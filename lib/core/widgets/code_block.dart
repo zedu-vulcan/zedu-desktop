@@ -107,10 +107,12 @@ class CodeBlock extends StatefulWidget {
 class _CodeBlockState extends State<CodeBlock> {
   bool _copied = false;
   Timer? _resetTimer;
+  final _scrollController = ScrollController();
 
   @override
   void dispose() {
     _resetTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -165,16 +167,21 @@ class _CodeBlockState extends State<CodeBlock> {
             ],
           ),
           Divider(height: 1, color: colors.divider),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.all(12),
-            child: SelectableText(
-              widget.code,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.5,
-                color: colors.textPrimary,
-                fontFamily: 'monospace',
+          Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.all(12),
+              child: SelectableText(
+                widget.code,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: colors.textPrimary,
+                  fontFamily: 'monospace',
+                ),
               ),
             ),
           ),

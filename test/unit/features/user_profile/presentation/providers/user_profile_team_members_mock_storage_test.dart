@@ -60,7 +60,7 @@ void main() {
       () => repo.getNotificationPreferences(orgId: any(named: 'orgId')),
     ).thenAnswer((_) async => Success(NotificationPreferences.empty()));
     when(
-      () => repo.getSecuritySessions(),
+      () => repo.getSecuritySessions(userId: any(named: 'userId')),
     ).thenAnswer((_) async => const Success(<SecuritySession>[]));
     when(() => repo.getOrganization(orgId: any(named: 'orgId'))).thenAnswer(
       (_) async => const Success(
@@ -77,7 +77,7 @@ void main() {
       () => repo.getTeamMembers(orgId: any(named: 'orgId')),
     ).thenAnswer((_) async => Success([_member('real-1', 'Ada')]));
     when(
-      () => repo.getRolesAndPermissions(),
+      () => repo.getRolesAndPermissions(orgId: any(named: 'orgId')),
     ).thenAnswer((_) async => const Success(<RolePermission>[]));
     when(
       () => repo.getBillingInfo(),

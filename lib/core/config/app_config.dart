@@ -31,6 +31,19 @@ String defaultApiBaseUrl({required bool isRelease}) =>
 /// The website's Contact Sales page, opened from the Enterprise plan.
 const String kDefaultContactSalesUrl = 'https://zedu.chat/contact-sales';
 
+/// Where in-app reports of messages and people go, until the backend has a
+/// report endpoint.
+const String kReportEmail = 'support@emerj.net';
+
+/// The live Centrifugo websocket, used when `CONNECT_URL` comes from neither
+/// `--dart-define` nor `.env`. It carries realtime events such as incoming
+/// Buzz calls; the web app reads the same URL from `NEXT_PUBLIC_CONNECT_URL`.
+const String kDefaultConnectUrl =
+    'wss://api.zedu.chat/centrifugo/connection/websocket';
+
+/// Default repository URL for the Zedu Desktop app.
+const String kDefaultRepoUrl = 'https://github.com/zeduchat/zedu-desktop';
+
 class AppConfig {
   const AppConfig({
     required this.apiBaseUrl,
@@ -39,7 +52,27 @@ class AppConfig {
     this.googleClientSecret = '',
     this.contactSalesUrl = kDefaultContactSalesUrl,
     this.webAppUrl = '',
+    this.repoUrl = kDefaultRepoUrl,
+    this.repoUrls = const <String>[],
+    this.connectUrl = kDefaultConnectUrl,
   });
+
+  /// Whether [url] matches one of the repository URLs this project accepts
+  /// for PR deliveries. Returns true when the repo list is empty (meaning any
+  /// repo is accepted), or when [url] matches one of the configured URLs.
+  bool isValidRepoUrl(String url) {
+    if (repoUrls.isEmpty) return true;
+    final normalized = url.replaceAll('"', '').replaceAll("'", '').trim();
+    return repoUrls.any((u) {
+      final normalizedRepo = u.replaceAll('"', '').replaceAll("'", '').trim();
+      final normalizedRepoNoSlash = normalizedRepo.endsWith('/')
+          ? normalizedRepo.substring(0, normalizedRepo.length - 1)
+          : normalizedRepo;
+      return normalized == normalizedRepoNoSlash ||
+          '$normalizedRepoNoSlash/'.startsWith(normalized) ||
+          '$normalized/'.startsWith(normalizedRepoNoSlash);
+    });
+  }
 
   /// Resolves config after [loadAppEnv] has run in [main] (root `.env` /
   /// `.env.example`, bundled as assets).
@@ -53,12 +86,18 @@ class AppConfig {
     const defineClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
     const defineClientSecret = String.fromEnvironment('GOOGLE_CLIENT_SECRET');
     const defineWebAppUrl = String.fromEnvironment('WEB_APP_URL');
+    const defineRepoUrl = String.fromEnvironment('REPO_URL');
+    const defineRepoUrls = String.fromEnvironment('REPO_URLS');
+    const defineConnectUrl = String.fromEnvironment('CONNECT_URL');
 
     final envApiBaseUrl = dotenv.maybeGet('API_BASE_URL')?.trim();
     final envUsesMock = dotenv.maybeGet('USE_MOCK_DATA')?.trim();
     final envClientId = dotenv.maybeGet('GOOGLE_CLIENT_ID')?.trim();
     final envClientSecret = dotenv.maybeGet('GOOGLE_CLIENT_SECRET')?.trim();
     final envWebAppUrl = dotenv.maybeGet('WEB_APP_URL')?.trim();
+    final envRepoUrl = dotenv.maybeGet('REPO_URL')?.trim();
+    final envRepoUrls = dotenv.maybeGet('REPO_URLS')?.trim();
+    final envConnectUrl = dotenv.maybeGet('CONNECT_URL')?.trim();
 
     // Teams point the app at their own backend via --dart-define or .env;
     // otherwise the build mode decides, so release builds never default to
@@ -93,6 +132,35 @@ class AppConfig {
         ? envClientSecret!
         : '';
 
+    // Build the list of accepted repository URLs: the explicit repo URL plus
+    // any additional comma-separated URLs from REPO_URLS.
+    List<String> repoUrls = <String>[];
+    final repoUrl = defineRepoUrl.isNotEmpty
+        ? defineRepoUrl
+        : (envRepoUrl?.isNotEmpty ?? false)
+        ? envRepoUrl!
+        : kDefaultRepoUrl;
+    if (defineRepoUrls.isNotEmpty) {
+      repoUrls.addAll(
+        defineRepoUrls
+            .split(',')
+            .map((u) => u.trim())
+            .where((u) => u.isNotEmpty),
+      );
+    }
+    if (envRepoUrls?.isNotEmpty ?? false) {
+      repoUrls.addAll(
+        envRepoUrls!.split(',').map((u) => u.trim()).where((u) => u.isNotEmpty),
+      );
+    }
+    repoUrls.add(repoUrl);
+    repoUrls = repoUrls.toSet().toList(); // Deduplicate
+    final connectUrl = defineConnectUrl.isNotEmpty
+        ? defineConnectUrl
+        : (envConnectUrl?.isNotEmpty ?? false)
+        ? envConnectUrl!
+        : kDefaultConnectUrl;
+
     return AppConfig(
       apiBaseUrl: apiBaseUrl,
       usesMockData: usesMockData,
@@ -101,6 +169,9 @@ class AppConfig {
       webAppUrl: defineWebAppUrl.isNotEmpty
           ? defineWebAppUrl
           : envWebAppUrl ?? '',
+      repoUrl: repoUrl,
+      repoUrls: repoUrls,
+      connectUrl: connectUrl,
     );
   }
 
@@ -113,6 +184,16 @@ class AppConfig {
   /// The web app's address, from `WEB_APP_URL`. Empty means [webBaseUrl]
   /// works it out from [apiBaseUrl].
   final String webAppUrl;
+
+  /// The repository URL this project's PRs should target. Defaults to the
+  /// Zedu Desktop GitHub repo. When set, PR deliveries are validated against
+  // this URL (and any additional [repoUrls]).
+  final String repoUrl;
+
+  /// Additional repository URLs that are accepted for PR deliveries, in
+  // addition to [repoUrl]. Used when a project's fixes span multiple
+  // repositories (e.g., a desktop app and its backend).
+  final List<String> repoUrls;
 
   /// Where the web app runs, without a trailing slash, for links that open
   /// in the browser (such as Buzz meetings). Defaults to the API host
@@ -134,6 +215,9 @@ class AppConfig {
       port: api.hasPort ? api.port : null,
     ).toString();
   }
+
+  /// Centrifugo websocket for realtime events (`CONNECT_URL`).
+  final String connectUrl;
 }
 
 bool _parseBool(String raw, {required bool defaultValue}) {

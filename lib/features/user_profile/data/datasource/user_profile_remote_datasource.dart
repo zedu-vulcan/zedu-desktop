@@ -14,7 +14,9 @@ abstract interface class UserProfileRemoteDataSource {
     required String? orgId,
     required NotificationPreferences preferences,
   });
-  Future<List<SecuritySessionModel>> getSecuritySessions();
+  Future<List<SecuritySessionModel>> getSecuritySessions({
+    required String userId,
+  });
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -38,7 +40,7 @@ abstract interface class UserProfileRemoteDataSource {
   });
   Future<TeamMemberModel> updateMember(TeamMember member);
   Future<void> removeMember(String memberId);
-  Future<List<RolePermissionModel>> getRolesAndPermissions();
+  Future<List<RolePermissionModel>> getRolesAndPermissions({String? orgId});
   Future<BillingInfoModel> getBillingInfo();
 }
 
@@ -73,15 +75,27 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
     }
     // Same endpoint and multipart fields as Zedu web. Empty values are left
     // out so fields the user didn't change are never overwritten.
-    final fields = <String, String>{
-      'full_name': account.name,
-      'display_name': account.displayName,
-      'username': account.username,
-      'phone': account.phoneNumber,
-      'title': account.title,
-      'timezone': account.timezone,
-      'name_pronounciation': account.namePronunciation,
-    }..removeWhere((_, value) => value.isEmpty);
+    // Same endpoint and multipart fields as Zedu web. Fields marked with
+    // kUnchangedField (and empty required fields) are omitted from the
+    // payload so they are not overwritten. Cleared optional fields (empty
+    // strings) are sent so the backend clears them.
+    final fields =
+        <String, String>{
+          'full_name': account.name,
+          'display_name': account.displayName,
+          'username': account.username,
+          'phone': account.phoneNumber,
+          'title': account.title,
+          'timezone': account.timezone,
+          'name_pronounciation': account.namePronunciation,
+        }..removeWhere((key, value) {
+          if (value == kUnchangedField) return true;
+          if (value.isEmpty &&
+              (key == 'full_name' || key == 'username' || key == 'timezone')) {
+            return true;
+          }
+          return false;
+        });
     await _apiBaseService.patch<Map<String, dynamic>>(
       path: '/profile',
       data: FormData.fromMap(fields),
@@ -259,14 +273,20 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
   }
 
   @override
-  Future<List<SecuritySessionModel>> getSecuritySessions() async {
+  Future<List<SecuritySessionModel>> getSecuritySessions({
+    required String userId,
+  }) async {
     if (_config.usesMockData) {
       return _sessions.map(SecuritySessionModel.fromJson).toList();
     }
+    // zedu-be serves the sessions at GET /users/:user_id/sessions; there is
+    // no /profile/security/sessions route.
     final response = await _apiBaseService.get<Map<String, dynamic>>(
-      path: '/profile/security/sessions',
+      path: '/users/$userId/sessions',
     );
-    final data = response.data['data'] as List<dynamic>;
+    // No sessions comes back as 204 with no data.
+    final data = response.data['data'];
+    if (data is! List) return const [];
     return data
         .cast<Map<String, dynamic>>()
         .map(SecuritySessionModel.fromJson)
@@ -403,7 +423,13 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
             loadedTeamMembers = decoded
                 .map((e) => TeamMemberModel.fromJson(e as Map<String, dynamic>))
                 .toList();
-          } catch (_) {}
+          } catch (error) {
+            AppLogger.w(
+              'Could not parse cached team members for org $orgId',
+              tag: _tag,
+              error: error,
+            );
+          }
         }
       }
 
@@ -432,9 +458,9 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
       return list;
     }
 
-    if (orgId == null || orgId.length < 36) {
-      orgId = '019700db-4e22-7f90-a20e-f9116291ef24';
-    }
+    // With no workspace selected there are no members to show; never fall
+    // back to another organisation's members (Ziki #1452).
+    if (orgId == null || orgId.isEmpty) return [];
 
     try {
       final response = await _apiBaseService.get<Map<String, dynamic>>(
@@ -450,7 +476,8 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
           email: user['email'] as String? ?? '',
           role: user['role'] as String? ?? 'User',
           dateJoined: user['created_at'] as String? ?? '',
-          status: TeamMemberStatus.active, // Or parse from user['status']
+          // Pending invites and deactivated members come back here too.
+          status: TeamMemberModel.statusFromJson(user),
           name: _displayName(user),
           avatarUrl: user['avatar_url'] as String?,
         );
@@ -483,6 +510,8 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
         'emails': [email],
         'role_id': role,
       },
+      // zedu-be builds the emailed link as Referer + 'accept_org_invitation?..'.
+      headers: {'Referer': '${_config.webBaseUrl}/'},
     );
     final data = response.data['data'] as Map<String, dynamic>;
     final invites = data['invitations'] as List<dynamic>? ?? [];
@@ -501,13 +530,12 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
         name: email.split('@').first,
       );
     }
-    return TeamMemberModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      email: email,
-      role: role,
-      dateJoined: 'Pending',
-      status: TeamMemberStatus.pending,
-      name: email.split('@').first,
+    // A successful HTTP response can still contain rejected/duplicate emails.
+    // Only announce an invitation when the server confirms it in invitations.
+    throw const ApiFailure(
+      message:
+          'The server did not confirm this invitation. Refresh invitations before retrying.',
+      kind: ApiFailureKind.client,
     );
   }
 
@@ -542,12 +570,17 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
   }
 
   @override
-  Future<List<RolePermissionModel>> getRolesAndPermissions() async {
+  Future<List<RolePermissionModel>> getRolesAndPermissions({
+    String? orgId,
+  }) async {
     if (_config.usesMockData) {
       return _roles.map(RolePermissionModel.fromJson).toList();
     }
+    // The API serves an organisation's roles at /organisations/{orgId}/roles;
+    // /profile/organization/roles does not exist (#720).
+    if (orgId == null || orgId.isEmpty) return const [];
     final response = await _apiBaseService.get<Map<String, dynamic>>(
-      path: '/profile/organization/roles',
+      path: '/organisations/$orgId/roles',
     );
     final data = response.data['data'] as List<dynamic>;
     return data

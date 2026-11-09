@@ -132,6 +132,7 @@ class _ProfileContent extends StatelessWidget {
               isSaving: state.isSaving,
               onChangePassword: notifier.changePassword,
             ),
+            UserProfileSection.webhooks => const WebhookManagementSection(),
             UserProfileSection.organization =>
               organization == null
                   ? _OrganizationLoadError(
@@ -153,9 +154,12 @@ class _ProfileContent extends StatelessWidget {
             ),
             UserProfileSection.rolesAndPermissions =>
               RolesAndPermissionsSection(roles: state.rolesAndPermissions),
+            UserProfileSection.channelManagement =>
+              const ChannelManagementSection(),
             UserProfileSection.billing => BillingSection(
               billing: state.billing ?? BillingInfo.empty(),
               onInvite: notifier.inviteMember,
+              onComparePlans: () => context.go(AppRouter.buyCredits),
             ),
           },
         ),

@@ -5,8 +5,12 @@ import 'package:zedu/features/features.dart';
 /// first 77 and adds "...". It counts characters as people see them (grapheme
 /// clusters), so an emoji or accented letter at the cut is never split.
 String notificationPreview(String text) {
-  final characters = text.characters;
-  if (characters.length <= 80) return text;
+  // Messages from another client can carry HTML. Strip the markup and decode
+  // entities *before* truncating, so the cut never lands inside a tag or an
+  // escaped character and the banner shows what the sender wrote.
+  final plain = _notificationPlainText(text);
+  final characters = plain.characters;
+  if (characters.length <= 80) return plain;
   return '${characters.take(77)}...';
 }
 
@@ -50,6 +54,29 @@ bool isChannelOpen({
   final pickedId = chat.channelId;
   if (pickedId != null) return pickedId == channel.id;
   return (chat.id ?? '').toLowerCase() == channel.name.toLowerCase();
+}
+
+/// Tags become a space so words on either side do not run together, entities
+/// are decoded until decoding no longer changes the text, and the whitespace
+/// that leaves behind is collapsed.
+String _notificationPlainText(String raw) {
+  if (raw.isEmpty) return '';
+  var text = raw.replaceAll(RegExp(r'<[^>]*>'), ' ');
+  const entities = {
+    '&nbsp;': ' ',
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'",
+  };
+  for (var i = 0; i < 3; i++) {
+    final before = text;
+    entities.forEach((k, v) => text = text.replaceAll(k, v));
+    if (text == before) break;
+  }
+  return text.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {

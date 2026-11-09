@@ -8,17 +8,21 @@ class _FakeDmRepository extends Fake implements DmRepository {
   handler;
 
   @override
-  Future<List<DmConversation>> getConversations({
+  Future<DmConversationsPage> getConversations({
     required String orgId,
     int page = 1,
     bool recentDm = false,
     String? search,
   }) async {
     calls.add((orgId: orgId, page: page, search: search));
-    if (handler != null) {
-      return handler!(orgId, page, search);
-    }
-    return [];
+    final list = handler != null
+        ? handler!(orgId, page, search)
+        : <DmConversation>[];
+    return DmConversationsPage(
+      conversations: list,
+      currentPage: page,
+      totalPages: 1,
+    );
   }
 }
 

@@ -52,7 +52,12 @@ TextSpan? _styled(
 
 Future<void> _pumpMessage(WidgetTester tester, String text) async {
   final repository = _MockChannelRepository();
-  final result = Success([ChannelMessage(senderName: 'Ada', text: text)]);
+  final result = Success(
+    ChannelMessagePage(
+      messages: [ChannelMessage(senderName: 'Ada', text: text)],
+      hasMore: false,
+    ),
+  );
   when(
     () => repository.fetchChannelMessages('ch-1'),
   ).thenAnswer((_) async => result);

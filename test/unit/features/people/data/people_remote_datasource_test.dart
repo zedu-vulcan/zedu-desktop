@@ -11,7 +11,30 @@ void main() {
 
   setUp(() {
     api = MockApiBaseService();
-    datasource = PeopleRemoteDataSourceImpl(apiBaseService: api);
+    datasource = PeopleRemoteDataSourceImpl(
+      apiBaseService: api,
+      config: AppConfig(
+        apiBaseUrl: 'https://example.test',
+        usesMockData: false,
+      ),
+    );
+  });
+
+  test('mock build lists no members and makes no request (#3474)', () async {
+    final mockDatasource = PeopleRemoteDataSourceImpl(
+      apiBaseService: api,
+      config: AppConfig(apiBaseUrl: 'https://example.test', usesMockData: true),
+    );
+
+    final page = await mockDatasource.fetchMembers(orgId: 'org-1');
+
+    expect(page.members, isEmpty);
+    verifyNever(
+      () => api.get<Map<String, dynamic>>(
+        path: any(named: 'path'),
+        queryParameters: any(named: 'queryParameters'),
+      ),
+    );
   });
 
   void answer(Map<String, dynamic> query, Map<String, dynamic> body) {

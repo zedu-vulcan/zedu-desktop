@@ -7,8 +7,9 @@ class FileDeletionsNotifier extends Notifier<Set<String>> {
   Set<String> build() => const {};
 
   /// Deletes [file]: moves it to Deleted files, or removes it for good when
-  /// [permanent]. Reloads the list when it worked. Returns what to tell the
-  /// person when it failed, or null.
+  /// [permanent]. Reloads the files and folders when it worked, since the
+  /// file leaves this list and the folder's item count changes. Returns what
+  /// to tell the person when it failed, or null.
   Future<String?> delete(WorkspaceFile file, {bool permanent = false}) async {
     if (state.contains(file.id)) return null;
     state = {...state, file.id};
@@ -20,7 +21,9 @@ class FileDeletionsNotifier extends Notifier<Set<String>> {
 
     switch (result) {
       case Success():
-        ref.invalidate(filesListProvider);
+        ref
+          ..invalidate(filesListProvider)
+          ..invalidate(foldersListProvider);
         return null;
       case Failure(:final error):
         return 'Could not delete ${file.name}. ${_reason(error)}';

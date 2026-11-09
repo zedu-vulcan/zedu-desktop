@@ -58,14 +58,56 @@ String formatItemCount(int count) => count == 1 ? '1 item' : '$count items';
 /// Below this width the Owner and Shared in columns are hidden.
 const _compactWidth = 720.0;
 
+/// Horizontal padding on each side of a table row.
+const _rowPadding = 20.0;
+
 class _Column {
-  const _Column(this.label, this.flex, {this.compact = true});
+  const _Column(
+    this.label,
+    this.flex, {
+    this.compact = true,
+    this.minWidth = 0,
+  });
 
   final String label;
   final int flex;
 
   /// Whether the column stays when the table is narrow.
   final bool compact;
+
+  /// Width the column keeps when its flex share would be smaller, so short
+  /// values such as `120 KB` aren't cut off.
+  final double minWidth;
+}
+
+/// Widths of [columns] in [width]: null for a column sized by its flex, or
+/// the fixed width of a column whose flex share is below its minimum. When
+/// the minimums don't fit, every column falls back to its flex.
+List<double?> _columnWidths(List<_Column> columns, double width) {
+  final widths = List<double?>.filled(columns.length, null);
+  var changed = true;
+  while (changed) {
+    changed = false;
+    var remaining = width;
+    var flex = 0;
+    for (var i = 0; i < columns.length; i++) {
+      final fixed = widths[i];
+      if (fixed != null) {
+        remaining -= fixed;
+      } else {
+        flex += columns[i].flex;
+      }
+    }
+    if (remaining < 0) return List.filled(columns.length, null);
+    for (var i = 0; i < columns.length; i++) {
+      if (widths[i] != null) continue;
+      if (remaining * columns[i].flex / flex < columns[i].minWidth) {
+        widths[i] = columns[i].minWidth;
+        changed = true;
+      }
+    }
+  }
+  return widths;
 }
 
 class _Table extends StatelessWidget {
@@ -92,16 +134,25 @@ class _Table extends StatelessWidget {
           for (var i = 0; i < columns.length; i++)
             if (!isCompact || columns[i].compact) i,
         ];
+        final widths = _columnWidths([
+          for (final i in shown) columns[i],
+        ], constraints.maxWidth - _rowPadding * 2);
 
         Widget row(List<Widget> cells, {bool header = false}) => Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: 20,
+            horizontal: _rowPadding,
             vertical: header ? 12 : 14,
           ),
           child: Row(
             children: [
-              for (final i in shown)
-                Expanded(flex: columns[i].flex, child: cells[i]),
+              for (var k = 0; k < shown.length; k++)
+                if (widths[k] case final width?)
+                  SizedBox(width: width, child: cells[shown[k]])
+                else
+                  Expanded(
+                    flex: columns[shown[k]].flex,
+                    child: cells[shown[k]],
+                  ),
             ],
           ),
         );
@@ -155,6 +206,27 @@ Widget _cellText(BuildContext context, String text) => Text(
     color: context.colors.textPrimary,
   ),
 );
+
+/// The channels a file was shared in.
+///
+/// The files list does not carry that, so it comes from the file's own info
+/// route. While it loads, and for a file shared nowhere, the cell keeps the
+/// dash the list used to show.
+class _SharedInCell extends ConsumerWidget {
+  const _SharedInCell(this.file, {super.key});
+
+  final WorkspaceFile file;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final info = ref.watch(fileInfoProvider(file.id));
+    final sharedIn = info is AsyncData<WorkspaceFileInfo>
+        ? info.value.sharedInLabel
+        : '';
+    final text = sharedIn.isNotEmpty ? sharedIn : file.sharedIn;
+    return _cellText(context, text.isEmpty ? '—' : text);
+  }
+}
 
 Widget _nameCell(
   BuildContext context,
@@ -226,7 +298,10 @@ class FoldersTable extends StatelessWidget {
                 tooltip: 'Delete folder',
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                constraints: const BoxConstraints.tightFor(
+                  width: 32,
+                  height: 32,
+                ),
                 icon: Icon(Icons.delete_outline, size: 18, color: colors.error),
                 onPressed: () => onDelete!(folder),
               ),
@@ -327,12 +402,15 @@ class FilesTable extends StatelessWidget {
 
     return _Table(
       columns: [
-        const _Column('Name', 5),
+        // Room for the icon and the start of the name.
+        const _Column('Name', 5, minWidth: 64),
         const _Column('Shared in', 2, compact: false),
         const _Column('Owner', 2, compact: false),
-        const _Column('Date Modified', 2),
-        const _Column('Size', 1),
-        if (hasActions) const _Column('', 1),
+        // Wide enough for the header and `Nov 30, 2026`, and for the longest
+        // size, such as `1023 KB`.
+        const _Column('Date Modified', 2, minWidth: 104),
+        const _Column('Size', 1, minWidth: 64),
+        if (hasActions) const _Column('', 1, minWidth: 32),
       ],
       rowCount: files.length,
       onTapRow: (r) => onOpen(files[r]),
@@ -368,7 +446,7 @@ class FilesTable extends StatelessWidget {
                   )
                 : null,
           ),
-          _cellText(context, file.sharedIn.isEmpty ? '—' : file.sharedIn),
+          _SharedInCell(file, key: ValueKey('shared-in-${file.id}')),
           _cellText(context, ownerNameOf(file)),
           _cellText(context, formatFileDate(file.modifiedAt)),
           _cellText(context, formatFileSize(file.size)),

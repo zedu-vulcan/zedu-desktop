@@ -136,7 +136,7 @@ class _UserMenuDialogState extends ConsumerState<UserMenuDialog> {
                               const SizedBox(width: 4),
                               Flexible(
                                 child: Text(
-                                  '$balance AI credits',
+                                  aiCreditsLabel(balance),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(

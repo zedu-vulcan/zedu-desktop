@@ -89,6 +89,8 @@ class AccountSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 48),
+        const LaunchAtLoginTile(),
+        const SizedBox(height: 48),
         AppButton.outlined(
           label: 'Delete my account',
           expand: false,
@@ -137,10 +139,10 @@ class _AvatarBlock extends StatelessWidget {
     final fallback = Center(
       child: Text(
         initials,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 56,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF0B7A73),
+          color: context.colors.primary,
         ),
       ),
     );
@@ -149,7 +151,7 @@ class _AvatarBlock extends StatelessWidget {
       height: 144,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFFE9FBFA),
+        color: context.colors.primaryBg,
         borderRadius: BorderRadius.circular(8),
       ),
       child: url.isEmpty

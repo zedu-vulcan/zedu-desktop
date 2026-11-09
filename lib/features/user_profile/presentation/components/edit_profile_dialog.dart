@@ -97,6 +97,8 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   late String selectedTimezone;
   late String selectedCountry;
 
+  TextEditingController? _countryController;
+
   bool _saving = false;
   String? _saveError;
   bool _confirmingDiscard = false;
@@ -419,6 +421,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                               },
                               onSelected: (value) {
                                 setState(() => selectedCountry = value);
+                                _countryController?.text = value;
                               },
                               fieldViewBuilder:
                                   (
@@ -427,12 +430,18 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                                     focusNode,
                                     onFieldSubmitted,
                                   ) {
+                                    _countryController = controller;
                                     return TextFormField(
                                       controller: controller,
                                       focusNode: focusNode,
-                                      onChanged: (value) => setState(() {
-                                        selectedCountry = value;
-                                      }),
+                                      onChanged: (value) {
+                                        final canonical = _canonicalCountryName(
+                                          value,
+                                        );
+                                        setState(() {
+                                          selectedCountry = canonical;
+                                        });
+                                      },
                                       validator: (value) {
                                         final country = _canonicalCountryName(
                                           value ?? '',
@@ -582,35 +591,41 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                               ),
                             ),
                             const SizedBox(height: 12),
+                            // Photo upload isn't supported yet, so both
+                            // buttons are disabled and say why (Ziki #117).
                             Center(
-                              child: TextButton.icon(
-                                onPressed: () {
-                                  // Upload photo placeholder
-                                },
-                                icon: Icon(
-                                  Icons.upload_outlined,
-                                  size: 16,
-                                  color: colors.primary,
-                                ),
-                                label: Text(
-                                  'Upload photo',
-                                  style: context.textTheme.bodySmall?.copyWith(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w500,
+                              child: Tooltip(
+                                message: 'Coming soon',
+                                child: TextButton.icon(
+                                  onPressed: null,
+                                  icon: Icon(
+                                    Icons.upload_outlined,
+                                    size: 16,
+                                    color: colors.textHint,
+                                  ),
+                                  label: Text(
+                                    'Upload photo',
+                                    style: context.textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: colors.textHint,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                   ),
                                 ),
                               ),
                             ),
                             Center(
-                              child: TextButton(
-                                onPressed: () {
-                                  // Remove photo placeholder
-                                },
-                                child: Text(
-                                  'Remove photo',
-                                  style: context.textTheme.bodySmall?.copyWith(
-                                    color: colors.error,
-                                    fontWeight: FontWeight.w500,
+                              child: Tooltip(
+                                message: 'Coming soon',
+                                child: TextButton(
+                                  onPressed: null,
+                                  child: Text(
+                                    'Remove photo',
+                                    style: context.textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: colors.textHint,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                   ),
                                 ),
                               ),

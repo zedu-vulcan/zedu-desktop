@@ -16,7 +16,14 @@ class _FakeRepository implements BuzzMeetingsRepository {
   }
 }
 
-Future<void> _pump(WidgetTester tester, _FakeRepository repository) async {
+const _urlLauncherChannel = MethodChannel('plugins.flutter.io/url_launcher');
+
+Future<void> _pump(
+  WidgetTester tester,
+  _FakeRepository repository, {
+  String slug = 'acme',
+  bool signedIn = true,
+}) async {
   tester.view.physicalSize = const Size(1400, 900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -26,7 +33,8 @@ Future<void> _pump(WidgetTester tester, _FakeRepository repository) async {
     ProviderScope(
       overrides: [
         buzzMeetingsRepositoryProvider.overrideWithValue(repository),
-        buzzOrgSlugProvider.overrideWithValue('acme'),
+        buzzOrgSlugProvider.overrideWithValue(slug),
+        buzzSignedInProvider.overrideWithValue(signedIn),
         buzzConfigProvider.overrideWithValue(
           const AppConfig(
             apiBaseUrl: 'https://api.zedu.chat/api/v1/',
@@ -67,6 +75,26 @@ void main() {
     expect(join().onPressed, isNotNull);
   });
 
+  testWidgets('Join says so when a pasted link is not a Zedu meeting', (
+    tester,
+  ) async {
+    await _pump(tester, _FakeRepository(const Success('abc')));
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://meet.google.com/abc-defg-hij',
+    );
+    await tester.pump();
+    await tester.tap(find.widgetWithText(TextButton, 'Join'));
+    await tester.pump();
+
+    expect(find.text("That isn't a Zedu meeting link."), findsOneWidget);
+
+    // The toast dismisses itself on a timer; let it fire before the test ends.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a meeting for later shows its link to copy', (tester) async {
     final repository = _FakeRepository(const Success('abc-defg-hij'));
     await _pump(tester, repository);
@@ -84,5 +112,80 @@ void main() {
       findsOneWidget,
     );
     expect(find.byTooltip('Copy meeting link'), findsOneWidget);
+  });
+
+  group('Join', () {
+    final launchedUrls = <String>[];
+
+    setUp(() {
+      launchedUrls.clear();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_urlLauncherChannel, (call) async {
+            if (call.method == 'launch') {
+              launchedUrls.add((call.arguments as Map)['url'] as String);
+            }
+            return true;
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_urlLauncherChannel, null);
+    });
+
+    Future<void> join(WidgetTester tester) async {
+      await tester.enterText(find.byType(TextField), 'abc-defg-hij');
+      await tester.pump();
+      await tester.tap(find.widgetWithText(TextButton, 'Join'));
+      await tester.pump();
+    }
+
+    // AppToastService auto-dismisses on a 4s timer; let it fire before the
+    // test ends so no timer is left pending.
+    Future<void> drainToastTimer(WidgetTester tester) async {
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('signed in with a workspace opens the meeting without a '
+        'sign-in error', (tester) async {
+      await _pump(tester, _FakeRepository(const Success('abc')));
+
+      await join(tester);
+      await tester.pumpAndSettle();
+
+      expect(launchedUrls, ['https://zedu.chat/acme/buzz/abc-defg-hij']);
+      expect(find.text('Sign in again to join a meeting.'), findsNothing);
+    });
+
+    testWidgets('signed in without a workspace slug explains the workspace '
+        'is missing', (tester) async {
+      await _pump(tester, _FakeRepository(const Success('abc')), slug: '');
+
+      await join(tester);
+
+      expect(
+        find.text(BuzzMeetingsNotifier.workspaceMissingJoinMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Sign in again to join a meeting.'), findsNothing);
+      expect(launchedUrls, isEmpty);
+      await drainToastTimer(tester);
+    });
+
+    testWidgets('signed out asks to sign in again', (tester) async {
+      await _pump(
+        tester,
+        _FakeRepository(const Success('abc')),
+        slug: '',
+        signedIn: false,
+      );
+
+      await join(tester);
+
+      expect(find.text('Sign in again to join a meeting.'), findsOneWidget);
+      expect(launchedUrls, isEmpty);
+      await drainToastTimer(tester);
+    });
   });
 }

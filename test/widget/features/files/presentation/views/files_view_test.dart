@@ -57,28 +57,6 @@ class _FakeProfileNotifier extends UserProfileNotifier {
 
 /// Signed in as Ada (`u-1`), who owns the listed files. The share dialog reads
 /// the signed-in user to leave them out of its suggestions.
-class _FakeAuthNotifier extends AuthNotifier {
-  @override
-  AuthState build() => AuthState(
-    status: AuthStatus.authenticated,
-    user: User(
-      id: 'u-1',
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      email: 'ada@zedu.test',
-      phone: '',
-      username: 'ada',
-      isVerified: true,
-      isOnboarded: true,
-      createdAt: DateTime(2026, 1, 1),
-      currentOrg: 'org-1',
-      currentOrganisationSlug: 'org-1',
-      avatarUrl: '',
-      defaultAvatarUrl: '',
-    ),
-  );
-}
-
 class _FakePeopleRepository implements PeopleRepository {
   static const members = [
     OrgMember(id: 'u-2', name: 'Grace Hopper', email: 'grace@zedu.test'),
@@ -107,7 +85,7 @@ class _FakePeopleRepository implements PeopleRepository {
   }
 }
 
-class _FakeFilesRepository implements FilesRepository {
+class _FakeFilesRepository extends Fake implements FilesRepository {
   _FakeFilesRepository({
     this.failFolders = false,
     this.failCreate = false,
@@ -194,6 +172,10 @@ class _FakeFilesRepository implements FilesRepository {
     return details.future;
   }
 
+  @override
+  Future<Result<WorkspaceFileInfo>> fetchFileInfo(String fileId) async =>
+      Success(WorkspaceFileInfo());
+
   Set<String> pinnedIds = {};
   final pinCalls = <(String, bool)>[];
   Result<void> pinResult = const Success(null);
@@ -232,6 +214,9 @@ class _FakeFilesRepository implements FilesRepository {
     deletes.add((fileId, permanent));
     return deleteResult;
   }
+
+  @override
+  Future<Result<void>> deleteFolder(String id) async => const Success(null);
 
   /// What a download returns; complete it to finish the download.
   Completer<Result<void>> download = Completer()..complete(const Success(null));
@@ -313,8 +298,10 @@ class _FakeFilesRepository implements FilesRepository {
   }
 
   @override
-  Future<Result<WorkspaceFile>> uploadFile(XFile file, {String? parentId}) async =>
-      Success(WorkspaceFile(id: 'up', name: file.name));
+  Future<Result<WorkspaceFile>> uploadFile(
+    XFile file, {
+    String? parentId,
+  }) async => Success(WorkspaceFile(id: 'up', name: file.name));
 
   @override
   Future<Result<void>> createFolder({
@@ -411,6 +398,31 @@ void main() {
     expect(find.text('2 KB'), findsOneWidget);
   });
 
+  testWidgets('Name (A–Z) in the sort menu lists files by name (Ziki #3449)', (
+    tester,
+  ) async {
+    final repository = _FakeFilesRepository()
+      ..moreFiles = [
+        WorkspaceFile(id: 'f-2', name: 'agenda.pdf', updatedAt: DateTime(2026)),
+        WorkspaceFile(id: 'f-3', name: 'Zoo.txt', updatedAt: DateTime(2026, 2)),
+      ];
+    await _pump(tester, repository);
+    await tester.tap(find.text('Files').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Newest to oldest'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Name (A–Z)').last);
+    await tester.pumpAndSettle();
+
+    final top = {
+      for (final name in ['agenda.pdf', 'logo.png', 'Zoo.txt'])
+        name: tester.getTopLeft(find.text(name)).dy,
+    };
+    expect(top['agenda.pdf']!, lessThan(top['logo.png']!));
+    expect(top['logo.png']!, lessThan(top['Zoo.txt']!));
+  });
+
   testWidgets('a sidebar list loads that list', (tester) async {
     final repository = _FakeFilesRepository();
     await _pump(tester, repository);
@@ -421,6 +433,66 @@ void main() {
     expect(repository.folderRequests.last, (FilesScope.trash, null));
     // The title follows the list.
     expect(find.text('Deleted files'), findsNWidgets(2));
+  });
+
+  group('Reset filters (Ziki #3445)', () {
+    Finder resetButton() => find.byKey(const Key('files-reset-filters'));
+
+    testWidgets('is hidden until a filter is set', (tester) async {
+      await _pump(tester, _FakeFilesRepository());
+
+      expect(resetButton(), findsNothing);
+
+      await tester.tap(find.text('File Type'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Images').last);
+      await tester.pumpAndSettle();
+
+      expect(resetButton(), findsOneWidget);
+    });
+
+    testWidgets('clears search, type and date and reloads the list', (
+      tester,
+    ) async {
+      final repository = _FakeFilesRepository();
+      await _pump(tester, repository);
+      await tester.tap(find.text('Files').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField).first, 'logo');
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('File Type'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Images').last);
+      await tester.pumpAndSettle();
+      // The first match is the toolbar dropdown; the table also has a
+      // Date Modified column.
+      await tester.tap(find.text('Date Modified').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Today').last);
+      await tester.pumpAndSettle();
+      expect(repository.queries.last.search, 'logo');
+      expect(repository.queries.last.category, FileCategory.images);
+      expect(repository.queries.last.dateModified, DateModifiedFilter.today);
+
+      await tester.tap(resetButton());
+      await tester.pumpAndSettle();
+
+      final query = repository.queries.last;
+      expect(query.search, '');
+      expect(query.category, isNull);
+      expect(query.dateModified, isNull);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        '',
+      );
+      expect(find.text('File Type'), findsOneWidget);
+      expect(find.text('Today'), findsNothing);
+      expect(resetButton(), findsNothing);
+      // Still on the Files tab.
+      expect(find.text('logo.png'), findsOneWidget);
+    });
   });
 
   testWidgets('opening a folder shows its files and a way back', (

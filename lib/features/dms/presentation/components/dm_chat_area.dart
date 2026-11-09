@@ -14,6 +14,7 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
   bool _isDragging = false;
   bool _searchOpen = false;
   final _composerKey = GlobalKey<DmMessageComposerState>();
+  final _searchPanelKey = GlobalKey<SearchPanelState>();
 
   String get _recipientHandle {
     final parts = widget.conversation.displayName
@@ -96,12 +97,19 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
             .togglePinned(conversation.channelId);
       case 'pinned_messages':
         await _showPinnedMessages();
+      case 'saved_items':
+        await _showSavedItems();
       case 'search_in_conversation':
         await _showConversationSearch();
       case 'view_files':
         await _showConversationFiles();
+
       case 'export_transcript':
         await _showExportTranscript();
+
+      case 'view_links':
+        await _showConversationLinks();
+
       case 'clear_history':
         final confirmed = await _confirmConversationAction(
           title: 'Clear history?',
@@ -214,6 +222,26 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
     setState(() => _searchOpen = true);
   }
 
+  /// Cmd/Ctrl+F: opens the search panel, or puts the cursor back in its
+  /// field when it is already open (Ziki #3441).
+  void _findInConversation() {
+    if (!_searchOpen) {
+      setState(() => _searchOpen = true);
+      // The field's autofocus is skipped while the message box holds focus,
+      // so move the cursor once the panel is built.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _searchPanelKey.currentState?.focusField(),
+      );
+      return;
+    }
+    _searchPanelKey.currentState?.focusField();
+  }
+
+  void _closeConversationSearch() {
+    setState(() => _searchOpen = false);
+    _composerKey.currentState?.focusInput();
+  }
+
   Future<void> _showConversationFiles() async {
     final history = ref.read(
       chatHistoryProvider(widget.conversation.channelId),
@@ -223,6 +251,37 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
       builder: (context) => ConversationFilesDialog(
         title: '${widget.conversation.displayName} files',
         history: history,
+      ),
+    );
+  }
+
+  Future<void> _showConversationLinks() async {
+    final history = ref.read(
+      chatHistoryProvider(widget.conversation.channelId),
+    );
+    List<ConversationLinkSource> sources() => [
+      for (final message in history.messages)
+        ConversationLinkSource(
+          content: message['content']?.toString() ?? '',
+          author: history.isMyMessage(message)
+              ? history.currentUserName
+              : (message['sender_name'] ??
+                        message['username'] ??
+                        widget.conversation.displayName)
+                    .toString(),
+          sharedAt: DateTime.tryParse(message['created_at']?.toString() ?? ''),
+        ),
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => ConversationLinksDialog(
+        title: '${widget.conversation.displayName} links',
+        messages: sources(),
+        loadMessages: () async {
+          await history.loadAll();
+          return sources();
+        },
       ),
     );
   }
@@ -237,6 +296,13 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
         conversationName: widget.conversation.displayName,
         history: history,
       ),
+    );
+  }
+
+  Future<void> _showSavedItems() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => const SavedItemsDialog(),
     );
   }
 
@@ -260,299 +326,315 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
       ),
     );
 
-    return DropTarget(
-      onDragDone: (detail) {
-        _composerKey.currentState?.addFiles(detail.files);
-        setState(() => _isDragging = false);
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+            _findInConversation,
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _findInConversation,
       },
-      onDragEntered: (detail) {
-        setState(() => _isDragging = true);
-      },
-      onDragExited: (detail) {
-        setState(() => _isDragging = false);
-      },
-      child: Container(
-        color: colors.onPrimary,
-        child: Stack(
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      _DmChatHeader(
-                        conversation: widget.conversation,
-                        isOwnSpace: _isOwnSpace,
-                        isMuted: isMuted,
-                        isPinned: isPinned,
-                        onMenuAction: _handleMenuAction,
-                      ),
-                      Expanded(
-                        child: Consumer(
-                          builder: (context, ref, child) {
-                            final historyState = ref.watch(
-                              chatHistoryProvider(
-                                widget.conversation.channelId,
-                              ),
-                            );
-                            final isOwnSpace = _isOwnSpace;
-                            final messages = isOwnSpace
-                                ? historyState.messages
-                                      .where(
-                                        (message) =>
-                                            !_isOwnSpaceSystemEvent(message),
-                                      )
-                                      .toList()
-                                : historyState.messages;
+      child: DropTarget(
+        onDragDone: (detail) {
+          _composerKey.currentState?.addFiles(detail.files);
+          setState(() => _isDragging = false);
+        },
+        onDragEntered: (detail) {
+          setState(() => _isDragging = true);
+        },
+        onDragExited: (detail) {
+          setState(() => _isDragging = false);
+        },
+        child: Container(
+          color: colors.onPrimary,
+          child: Stack(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _DmChatHeader(
+                          conversation: widget.conversation,
+                          isOwnSpace: _isOwnSpace,
+                          isMuted: isMuted,
+                          isPinned: isPinned,
+                          onMenuAction: _handleMenuAction,
+                        ),
+                        Expanded(
+                          child: Consumer(
+                            builder: (context, ref, child) {
+                              final historyState = ref.watch(
+                                chatHistoryProvider(
+                                  widget.conversation.channelId,
+                                ),
+                              );
+                              final isOwnSpace = _isOwnSpace;
+                              final messages = isOwnSpace
+                                  ? historyState.messages
+                                        .where(
+                                          (message) =>
+                                              !_isOwnSpaceSystemEvent(message),
+                                        )
+                                        .toList()
+                                  : historyState.messages;
 
-                            return NotificationListener<ScrollNotification>(
-                              onNotification: (ScrollNotification scrollInfo) {
-                                if (!historyState.isLoading &&
-                                    historyState.hasMore &&
-                                    !historyState.loadFailed &&
-                                    !historyState.loadMoreFailed &&
-                                    scrollInfo.metrics.pixels >=
-                                        scrollInfo.metrics.maxScrollExtent *
-                                            0.8) {
-                                  ref
-                                      .read(
-                                        chatHistoryProvider(
-                                          widget.conversation.channelId,
-                                        ),
-                                      )
-                                      .loadMore();
-                                }
-                                return false;
-                              },
-                              child: CustomScrollView(
-                                reverse: true,
-                                slivers: [
-                                  SliverPadding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 16,
-                                    ),
-                                    sliver: SliverList(
-                                      delegate: SliverChildBuilderDelegate((
-                                        context,
-                                        index,
-                                      ) {
-                                        final msg = messages[index];
-                                        return _MessageBubble(
-                                          message: msg,
-                                          conversation: widget.conversation,
-                                          channelId:
-                                              widget.conversation.channelId,
-                                          onEdit: (id, text) => _composerKey
-                                              .currentState
-                                              ?.enterEditMode(id, text),
-                                        );
-                                      }, childCount: messages.length),
-                                    ),
-                                  ),
-                                  if (historyState.isLoading)
-                                    const SliverToBoxAdapter(
-                                      child: Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          vertical: 16,
-                                        ),
-                                        child: Center(
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                      ),
-                                    ),
-                                  if (!historyState.isLoading &&
-                                      historyState.loadFailed)
-                                    SliverToBoxAdapter(
-                                      child: _HistoryLoadError(
-                                        message: "Couldn't load messages.",
-                                        onRetry: historyState.retryLoad,
-                                      ),
-                                    )
-                                  else if (!historyState.isLoading &&
-                                      historyState.loadMoreFailed)
-                                    SliverToBoxAdapter(
-                                      child: _HistoryLoadError(
-                                        message:
-                                            "Couldn't load older messages.",
-                                        onRetry: historyState.loadMore,
-                                      ),
-                                    ),
-                                  if (!historyState.hasMore)
-                                    SliverToBoxAdapter(
-                                      child: historyState.historyCleared
-                                          ? const _HistoryClearedNote()
-                                          : isOwnSpace
-                                          ? OwnSpaceIntro(
-                                              conversation: widget.conversation,
-                                              onEditProfile: _editOwnProfile,
+                              return NotificationListener<ScrollNotification>(
+                                onNotification:
+                                    (ScrollNotification scrollInfo) {
+                                      if (!historyState.isLoading &&
+                                          historyState.hasMore &&
+                                          !historyState.loadFailed &&
+                                          !historyState.loadMoreFailed &&
+                                          scrollInfo.metrics.pixels >=
+                                              scrollInfo
+                                                      .metrics
+                                                      .maxScrollExtent *
+                                                  0.8) {
+                                        ref
+                                            .read(
+                                              chatHistoryProvider(
+                                                widget.conversation.channelId,
+                                              ),
                                             )
-                                          : DmProfileCard(
-                                              conversation: widget.conversation,
-                                              onViewProfile: () =>
-                                                  _handleMenuAction(
-                                                    'view_profile',
-                                                  ),
-                                            ),
+                                            .loadMore();
+                                      }
+                                      return false;
+                                    },
+                                child: CustomScrollView(
+                                  reverse: true,
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 16,
+                                      ),
+                                      sliver: SliverList(
+                                        delegate: SliverChildBuilderDelegate((
+                                          context,
+                                          index,
+                                        ) {
+                                          final msg = messages[index];
+                                          return _MessageBubble(
+                                            message: msg,
+                                            conversation: widget.conversation,
+                                            channelId:
+                                                widget.conversation.channelId,
+                                            onEdit: (id, text) => _composerKey
+                                                .currentState
+                                                ?.enterEditMode(id, text),
+                                          );
+                                        }, childCount: messages.length),
+                                      ),
                                     ),
-                                ],
-                              ),
-                            );
-                          },
+                                    if (historyState.isLoading)
+                                      const SliverToBoxAdapter(
+                                        child: Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: 16,
+                                          ),
+                                          child: Center(
+                                            child: CircularProgressIndicator(),
+                                          ),
+                                        ),
+                                      ),
+                                    if (!historyState.isLoading &&
+                                        historyState.loadFailed)
+                                      SliverToBoxAdapter(
+                                        child: _HistoryLoadError(
+                                          message: "Couldn't load messages.",
+                                          onRetry: historyState.retryLoad,
+                                        ),
+                                      )
+                                    else if (!historyState.isLoading &&
+                                        historyState.loadMoreFailed)
+                                      SliverToBoxAdapter(
+                                        child: _HistoryLoadError(
+                                          message:
+                                              "Couldn't load older messages.",
+                                          onRetry: historyState.loadMore,
+                                        ),
+                                      ),
+                                    if (!historyState.hasMore)
+                                      SliverToBoxAdapter(
+                                        child: historyState.historyCleared
+                                            ? const _HistoryClearedNote()
+                                            : isOwnSpace
+                                            ? OwnSpaceIntro(
+                                                conversation:
+                                                    widget.conversation,
+                                                onEditProfile: _editOwnProfile,
+                                              )
+                                            : DmProfileCard(
+                                                conversation:
+                                                    widget.conversation,
+                                                onViewProfile: () =>
+                                                    _handleMenuAction(
+                                                      'view_profile',
+                                                    ),
+                                              ),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      DmMessageComposer(
-                        key: _composerKey,
-                        recipientName: _recipientHandle,
-                        hintText: _isOwnSpace
-                            ? 'Write a note to yourself'
-                            : null,
+                        DmMessageComposer(
+                          key: _composerKey,
+                          recipientName: _recipientHandle,
+                          hintText: _isOwnSpace
+                              ? 'Write a note to yourself'
+                              : null,
+                          channelId: widget.conversation.channelId,
+                          draftKey: widget.conversation.conversationKey,
+                          participants: widget.conversation.participants,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_searchOpen)
+                    KeyedSubtree(
+                      key: ValueKey(widget.conversation.channelId),
+                      child: SearchPanel(
+                        key: _searchPanelKey,
                         channelId: widget.conversation.channelId,
-                        draftKey: widget.conversation.conversationKey,
-                        participants: widget.conversation.participants,
-                      ),
-                    ],
-                  ),
-                ),
-                if (_searchOpen)
-                  SearchPanel(
-                    key: ValueKey(widget.conversation.channelId),
-                    channelId: widget.conversation.channelId,
-                    onClose: () => setState(() => _searchOpen = false),
-                  ),
-              ],
-            ),
-
-            // FULL PAGE MODE INJECTION
-            Consumer(
-              builder: (context, ref, child) {
-                final activeCall = ref.watch(activeCallProvider);
-                if (activeCall.state.status == CallStatus.active &&
-                    activeCall.state.isFullPage) {
-                  return const Positioned.fill(child: BuzzMeetingView());
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-
-            // FLOATING / PIP INJECTION
-            Consumer(
-              builder: (context, ref, child) {
-                final activeCall = ref.watch(activeCallProvider);
-                if (activeCall.state.status == CallStatus.active &&
-                    !activeCall.state.isFullPage) {
-                  return const BuzzMeetingView();
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-
-            // INCOMING CALL MODAL
-            const IncomingCallModal(),
-
-            // RINGING STATE OVERLAY (Caller)
-            Consumer(
-              builder: (context, ref, child) {
-                final activeCall = ref.watch(activeCallProvider);
-                if (activeCall.state.status == CallStatus.calling) {
-                  return Positioned(
-                    top: 24,
-                    right: 24,
-                    child: Material(
-                      color: Colors.transparent,
-                      elevation: 8,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        width: 320,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: colors.background,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: colors.divider),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 16,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            const CircularProgressIndicator(),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'Calling...',
-                                    style: TextStyle(
-                                      color: colors.textHint,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  Text(
-                                    activeCall.state.remoteUserName ??
-                                        'Unknown',
-                                    style: TextStyle(
-                                      color: colors.textPrimary,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.call_end),
-                              tooltip: 'Cancel call',
-                              color: Colors.red,
-                              onPressed: () {
-                                ref
-                                    .read(activeCallProvider.notifier)
-                                    .cancelCall();
-                              },
-                            ),
-                          ],
-                        ),
+                        onClose: _closeConversationSearch,
                       ),
                     ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-
-            if (_isDragging)
-              Positioned.fill(
-                child: Container(
-                  color: colors.primary.withValues(alpha: 0.2),
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.primary,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'Drop files to attach',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                ],
               ),
-          ],
+
+              // FULL PAGE MODE INJECTION
+              Consumer(
+                builder: (context, ref, child) {
+                  final activeCall = ref.watch(activeCallProvider);
+                  if (activeCall.state.status == CallStatus.active &&
+                      activeCall.state.isFullPage) {
+                    return const Positioned.fill(child: BuzzMeetingView());
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+
+              // FLOATING / PIP INJECTION
+              Consumer(
+                builder: (context, ref, child) {
+                  final activeCall = ref.watch(activeCallProvider);
+                  if (activeCall.state.status == CallStatus.active &&
+                      !activeCall.state.isFullPage) {
+                    return const BuzzMeetingView();
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+
+              // INCOMING CALL MODAL
+              const IncomingCallModal(),
+
+              // RINGING STATE OVERLAY (Caller)
+              Consumer(
+                builder: (context, ref, child) {
+                  final activeCall = ref.watch(activeCallProvider);
+                  if (activeCall.state.status == CallStatus.calling) {
+                    return Positioned(
+                      top: 24,
+                      right: 24,
+                      child: Material(
+                        color: Colors.transparent,
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: 320,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: colors.background,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: colors.divider),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const CircularProgressIndicator(),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Calling...',
+                                      style: TextStyle(
+                                        color: colors.textHint,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    Text(
+                                      activeCall.state.remoteUserName ??
+                                          'Unknown',
+                                      style: TextStyle(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.call_end),
+                                tooltip: 'Cancel call',
+                                color: Colors.red,
+                                onPressed: () {
+                                  ref
+                                      .read(activeCallProvider.notifier)
+                                      .cancelCall();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+
+              if (_isDragging)
+                Positioned.fill(
+                  child: Container(
+                    color: colors.primary.withValues(alpha: 0.2),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Drop files to attach',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -859,12 +941,13 @@ class _DmChatHeader extends StatelessWidget {
               menuItem('mute_notifications', 'Mute notifications'),
               menuItem('pin_conversation', 'Pin conversation'),
               menuItem('pinned_messages', 'Pinned messages'),
+              menuItem('saved_items', 'Saved items'),
               menuItem('search_in_conversation', 'Search in conversation'),
+              menuItem('view_links', 'View links'),
               menuItem('view_files', 'View files'),
               menuItem('export_transcript', 'Export transcript'),
               const PopupMenuDivider(height: 1),
               menuItem('clear_history', 'Clear history'),
-              menuItem('block_user', 'Block User'),
               menuItem(
                 'delete_conversation',
                 'Delete conversation',
@@ -877,6 +960,11 @@ class _DmChatHeader extends StatelessWidget {
     );
   }
 }
+
+const _bubbleMonths = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 
 class _MessageBubble extends ConsumerWidget {
   final Map<String, dynamic> message;
@@ -1028,7 +1116,15 @@ class _MessageBubble extends ConsumerWidget {
         : (createdAt.hour == 0 ? 12 : createdAt.hour);
     final minute = createdAt.minute.toString().padLeft(2, '0');
     final period = createdAt.hour >= 12 ? 'PM' : 'AM';
-    final timeString = '$hour:$minute $period';
+    var timeString = '$hour:$minute $period';
+    final now = DateTime.now();
+    if (createdAt.year != now.year ||
+        createdAt.month != now.month ||
+        createdAt.day != now.day) {
+      // Without the day, a message from last week reads as today.
+      timeString =
+          '${_bubbleMonths[createdAt.month - 1]} ${createdAt.day}, $timeString';
+    }
 
     final senderName = isMe
         ? history.currentUserName
@@ -1041,6 +1137,31 @@ class _MessageBubble extends ConsumerWidget {
     final senderInitial = avatarInitial(senderName);
 
     final List<dynamic> media = (message['media'] as List<dynamic>?) ?? [];
+
+    final savedMessages = ref.watch(savedMessagesStoreProvider);
+    final isSaved = savedMessages.isSaved(channelId, messageId);
+
+    Future<void> toggleSaved() async {
+      await savedMessages.toggle(
+        SavedMessage(
+          messageId: messageId,
+          channelId: channelId,
+          conversationName: conversation.displayName,
+          senderName: senderName,
+          content: content.isNotEmpty ? content : 'Sent an attachment',
+          messageCreatedAt: createdAt,
+          savedAt: DateTime.now(),
+        ),
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isSaved ? 'Removed from Saved items.' : 'Saved to Saved items.',
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1091,19 +1212,41 @@ class _MessageBubble extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
+                      if (status == null && messageId.isNotEmpty)
+                        SaveLaterButton(
+                          channelId: channelId,
+                          threadId:
+                              message['thread_id']?.toString() ?? messageId,
+                        ),
                       Text(
                         timeString,
                         style: TextStyle(color: colors.textHint, fontSize: 11),
                       ),
+                      if (isSaved) ...[
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: 'Saved',
+                          child: Icon(
+                            Icons.bookmark,
+                            size: 12,
+                            color: colors.textHint,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 if (content.isNotEmpty)
                   _MessageMenu(
-                    enabled: status == null,
+                    enabled: messageId.isNotEmpty && status == null,
+                    isOwnMessage: isMe,
+                    isSaved: isSaved,
                     onPin: () => _pin(context, ref, messageId),
-                    onEdit: isMe ? () => onEdit(messageId, content) : null,
-                    onDelete: isMe
+                    onToggleSave: toggleSaved,
+                    onEdit: isMe && status == null
+                        ? () => onEdit(messageId, content)
+                        : null,
+                    onDelete: isMe && status == null
                         ? () => _confirmDelete(context, ref, messageId)
                         : null,
                     child: Container(
@@ -1132,12 +1275,15 @@ class _MessageBubble extends ConsumerWidget {
                     child: content.isNotEmpty
                         ? _AttachmentBubbleList(media: media, isMe: isMe)
                         // No text to hang the menu on, so it goes on the
-                        // attachments (no Edit: there is nothing to edit).
+                        // attachments (nothing to edit, but still saveable).
                         : _MessageMenu(
-                            enabled: status == null,
+                            enabled: messageId.isNotEmpty && status == null,
+                            isOwnMessage: isMe,
+                            isSaved: isSaved,
                             onPin: () => _pin(context, ref, messageId),
+                            onToggleSave: toggleSaved,
                             onEdit: null,
-                            onDelete: isMe
+                            onDelete: isMe && status == null
                                 ? () => _confirmDelete(context, ref, messageId)
                                 : null,
                             child: _AttachmentBubbleList(
@@ -1193,11 +1339,17 @@ class _MessageBubble extends ConsumerWidget {
   }
 }
 
-class _AttachmentBubbleList extends StatelessWidget {
+typedef _AttachmentBubbleList = MessageAttachmentList;
+
+class MessageAttachmentList extends StatelessWidget {
   final List<dynamic> media;
   final bool isMe;
 
-  const _AttachmentBubbleList({required this.media, required this.isMe});
+  const MessageAttachmentList({
+    super.key,
+    required this.media,
+    this.isMe = false,
+  });
 
   void _launchUrl(String url) async {
     final uri = Uri.tryParse(url);
@@ -1273,15 +1425,34 @@ class _AttachmentBubbleList extends StatelessWidget {
       runSpacing: 8,
       alignment: isMe ? WrapAlignment.end : WrapAlignment.start,
       children: media.map((item) {
-        final String fileName = (item['file_name'] ?? 'Attachment').toString();
-        final String fileLink = (item['file_link'] ?? '').toString();
+        if (item is! Map) return const SizedBox.shrink();
+        final map = item is Map<String, dynamic>
+            ? item
+            : Map<String, dynamic>.from(item);
+        final String fileName =
+            (map['file_name'] ?? map['name'] ?? map['title'] ?? 'Attachment')
+                .toString();
+        final String fileLink =
+            (map['file_link'] ??
+                    map['url'] ??
+                    map['file_url'] ??
+                    map['link'] ??
+                    '')
+                .toString();
+        String fileType = (map['file_type'] ?? map['type'] ?? '')
+            .toString()
+            .toLowerCase();
+        if (fileType.isEmpty && fileName.contains('.')) {
+          fileType = fileName.split('.').last.toLowerCase();
+        }
         final isImage = [
           'png',
           'jpg',
           'jpeg',
           'gif',
           'webp',
-        ].contains((item['file_type'] ?? '').toString().toLowerCase());
+          'bmp',
+        ].contains(fileType);
 
         if (isImage && fileLink.isNotEmpty) {
           final isNetwork = fileLink.startsWith('http');
@@ -1332,19 +1503,29 @@ class _AttachmentBubbleList extends StatelessWidget {
 }
 
 /// Shows a "more" button on hover, and a right-click or long-press menu, for
-/// a sent message: Pin on every message, and Edit and Delete on your own. The
-/// long press is for touch input, where there is no hover or right click.
+/// a message: Pin and Save on every message, and Edit and Delete on your own.
+/// The long press is for touch input, where there is no hover or right click.
+///
+/// Your own messages keep a fixed gutter for the button so the bubble never
+/// moves; incoming messages only grow one while hovered so the conversation
+/// keeps its alignment when the pointer is elsewhere.
 class _MessageMenu extends StatefulWidget {
   const _MessageMenu({
     required this.enabled,
+    required this.isOwnMessage,
+    required this.isSaved,
     required this.onPin,
+    required this.onToggleSave,
     required this.onEdit,
     required this.onDelete,
     required this.child,
   });
 
   final bool enabled;
+  final bool isOwnMessage;
+  final bool isSaved;
   final VoidCallback onPin;
+  final VoidCallback onToggleSave;
 
   /// Null on other people's messages, which can't be edited or deleted.
   final VoidCallback? onEdit;
@@ -1363,6 +1544,31 @@ class _MessageMenuState extends State<_MessageMenu> {
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
 
+    final button = PopupMenuButton<String>(
+      key: _menuKey,
+      tooltip: 'Message actions',
+      icon: const Icon(Icons.more_horiz, size: 18),
+      onSelected: (value) => switch (value) {
+        'pin' => widget.onPin(),
+        'edit' => widget.onEdit?.call(),
+        'save' => widget.onToggleSave(),
+        _ => widget.onDelete?.call(),
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'pin', child: Text('Pin message')),
+        if (widget.onEdit != null)
+          const PopupMenuItem(value: 'edit', child: Text('Edit message')),
+        PopupMenuItem(
+          value: 'save',
+          child: Text(
+            widget.isSaved ? 'Remove from Saved items' : 'Save to Saved items',
+          ),
+        ),
+        if (widget.onDelete != null)
+          const PopupMenuItem(value: 'delete', child: Text('Delete message')),
+      ],
+    );
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -1371,35 +1577,17 @@ class _MessageMenuState extends State<_MessageMenu> {
         onLongPress: () => _menuKey.currentState?.showButtonMenu(),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            Opacity(
-              opacity: _hovered ? 1 : 0,
-              child: PopupMenuButton<String>(
-                key: _menuKey,
-                tooltip: 'Message actions',
-                icon: const Icon(Icons.more_horiz, size: 18),
-                onSelected: (value) => switch (value) {
-                  'pin' => widget.onPin(),
-                  'edit' => widget.onEdit?.call(),
-                  _ => widget.onDelete?.call(),
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'pin', child: Text('Pin message')),
-                  if (widget.onEdit != null)
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Text('Edit message'),
-                    ),
-                  if (widget.onDelete != null)
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete message'),
-                    ),
+          children: widget.isOwnMessage
+              ? [
+                  Opacity(opacity: _hovered ? 1 : 0, child: button),
+                  Flexible(child: widget.child),
+                ]
+              : [
+                  Flexible(child: widget.child),
+                  // Kept in the tree at rest so the right-click and long-press
+                  // handlers can still open its menu; Offstage takes no room.
+                  Offstage(offstage: !_hovered, child: button),
                 ],
-              ),
-            ),
-            Flexible(child: widget.child),
-          ],
         ),
       ),
     );

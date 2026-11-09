@@ -11,8 +11,38 @@ void main() {
 
   setUp(() {
     api = MockApiBaseService();
-    datasource = BuzzMeetingsRemoteDataSourceImpl(apiBaseService: api);
+    datasource = BuzzMeetingsRemoteDataSourceImpl(
+      apiBaseService: api,
+      config: AppConfig(
+        apiBaseUrl: 'https://example.test',
+        usesMockData: false,
+      ),
+    );
   });
+
+  test(
+    'mock build refuses to create a meeting without a request (#3474)',
+    () async {
+      final mockDatasource = BuzzMeetingsRemoteDataSourceImpl(
+        apiBaseService: api,
+        config: AppConfig(
+          apiBaseUrl: 'https://example.test',
+          usesMockData: true,
+        ),
+      );
+
+      await expectLater(
+        mockDatasource.createMeeting(),
+        throwsA(isA<ApiFailure>()),
+      );
+      verifyNever(
+        () => api.post<Map<String, dynamic>>(
+          path: any(named: 'path'),
+          data: any(named: 'data'),
+        ),
+      );
+    },
+  );
 
   void answer(Map<String, dynamic> body) {
     when(

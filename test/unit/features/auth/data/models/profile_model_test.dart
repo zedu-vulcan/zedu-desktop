@@ -1,87 +1,144 @@
-import '../../../../../helpers/helpers.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:zedu/features/features.dart';
 
-/// A `GET /profile` payload (zedu-be `ProfileSummary`) with a status set.
-Map<String, dynamic> _profileJson() => <String, dynamic>{
-  'id': 'profile-1',
-  'user_id': 'user-1',
-  'email': 'ada@example.com',
-  'first_name': 'Ada',
-  'last_name': 'Lovelace',
-  'username': 'ada',
-  'organisation_id': 'org-1',
-  'created_at': '2026-11-01T10:00:00Z',
-  'icon': '📅',
-  'text': 'In a meeting',
-  'pause_notification': true,
-  'status_timeout': '4102444800',
-  'online': false,
-};
+Map<String, dynamic> _profileJson({Map<String, dynamic>? extra}) =>
+    <String, dynamic>{
+      'id': 'profile-1',
+      'userId': 'user-1',
+      'first_name': 'Jane',
+      'last_name': 'Doe',
+      'email': 'jane.doe@example.com',
+      'phone': '+1234567890',
+      'username': 'janedoe',
+      'avatar_url': 'https://example.com/avatar.png',
+      'default_avatar_url': 'https://example.com/default.png',
+      'created_at': '2026-01-01T10:00:00.000Z',
+      'is_active': true,
+      'is_verified': true,
+      'is_onboarded': true,
+      'organisation_id': 'org-1',
+      'current_organisation_slug': 'acme',
+      if (extra != null) ...extra,
+    };
 
 void main() {
-  group('ProfileModel status', () {
-    test('reads the custom status and presence from /profile', () {
-      final status = ProfileModel.fromJson(_profileJson()).toEntity().status;
+  group('ProfileModel.fromJson', () {
+    test('parses basic profile attributes', () {
+      final model = ProfileModel.fromJson(_profileJson());
 
-      expect(status.emoji, '📅');
-      expect(status.text, 'In a meeting');
-      expect(status.pauseNotifications, isTrue);
-      expect(status.online, isFalse);
-      expect(
-        status.expiresAt,
-        DateTime.fromMillisecondsSinceEpoch(4102444800 * 1000),
+      expect(model.id, 'user-1');
+      expect(model.firstName, 'Jane');
+      expect(model.lastName, 'Doe');
+      expect(model.email, 'jane.doe@example.com');
+      expect(model.currentOrg, 'org-1');
+      expect(model.currentOrganisationSlug, 'acme');
+      expect(model.status.hasCustomStatus, isFalse);
+      expect(model.status.emoji, isNull);
+      expect(model.status.text, isNull);
+      expect(model.status.online, isTrue);
+    });
+
+    test(
+      'parses flat custom status fields (icon, text, pause_notification, online)',
+      () {
+        final futureExpiry = DateTime.now().add(const Duration(hours: 2));
+        final model = ProfileModel.fromJson(
+          _profileJson(
+            extra: {
+              'icon': '\u{1F44B}',
+              'text': 'In a meeting',
+              'pause_notification': true,
+              'online': false,
+              'status_timeout': futureExpiry.toIso8601String(),
+            },
+          ),
+        );
+
+        expect(model.status.emoji, '\u{1F44B}');
+        expect(model.status.text, 'In a meeting');
+        expect(model.status.pauseNotifications, isTrue);
+        expect(model.status.online, isFalse);
+        expect(
+          model.status.expiresAt?.millisecondsSinceEpoch,
+          closeTo(futureExpiry.millisecondsSinceEpoch, 1000),
+        );
+        expect(model.status.hasCustomStatus, isTrue);
+      },
+    );
+
+    test('parses nested status map', () {
+      final model = ProfileModel.fromJson(
+        _profileJson(
+          extra: {
+            'status': {
+              'emoji': '\u{1F4BB}',
+              'text': 'Coding',
+              'pause_notifications': false,
+              'online': true,
+              'status_timeout': 'dont-clear',
+            },
+          },
+        ),
       );
-      expect(status.hasCustomStatus, isTrue);
+
+      expect(model.status.emoji, '\u{1F4BB}');
+      expect(model.status.text, 'Coding');
+      expect(model.status.pauseNotifications, isFalse);
+      expect(model.status.online, isTrue);
+      expect(model.status.expiresAt, isNull);
+      expect(model.status.hasCustomStatus, isTrue);
     });
 
-    test('accepts status_timeout as a number', () {
-      final json = _profileJson()..['status_timeout'] = 4102444800;
-
-      final status = ProfileModel.fromJson(json).toEntity().status;
-
-      expect(
-        status.expiresAt,
-        DateTime.fromMillisecondsSinceEpoch(4102444800 * 1000),
+    test('parses epoch seconds timestamp in status_timeout', () {
+      final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600;
+      final model = ProfileModel.fromJson(
+        _profileJson(
+          extra: {
+            'emoji': '\u{1F3AF}',
+            'text': 'Focused',
+            'status_timeout': nowSec,
+          },
+        ),
       );
+
+      expect(model.status.emoji, '\u{1F3AF}');
+      expect(model.status.text, 'Focused');
+      expect(model.status.expiresAt?.millisecondsSinceEpoch, nowSec * 1000);
     });
 
-    for (final raw in <Object?>['', '0', 'dont-clear', '30 minutes', null]) {
-      test('keeps the status with no expiry when status_timeout is $raw', () {
-        final json = _profileJson()..['status_timeout'] = raw;
+    test('parses human-readable status timeout string like "30 minutes"', () {
+      final before = DateTime.now();
+      final model = ProfileModel.fromJson(
+        _profileJson(
+          extra: {
+            'icon': '\u{2615}',
+            'text': 'Grabbing coffee',
+            'status_timeout': '30 minutes',
+          },
+        ),
+      );
 
-        final status = ProfileModel.fromJson(json).toEntity().status;
-
-        expect(status.expiresAt, isNull);
-        expect(status.hasCustomStatus, isTrue);
-      });
-    }
-
-    test('treats empty icon and text as no status', () {
-      final json = _profileJson()
-        ..['icon'] = ''
-        ..['text'] = ''
-        ..['status_timeout'] = '';
-
-      final status = ProfileModel.fromJson(json).toEntity().status;
-
-      expect(status.emoji, isNull);
-      expect(status.text, isNull);
-      expect(status.hasCustomStatus, isFalse);
+      expect(model.status.emoji, '\u{2615}');
+      expect(model.status.text, 'Grabbing coffee');
+      expect(model.status.expiresAt, isNotNull);
+      final diff = model.status.expiresAt!.difference(before);
+      expect(diff.inMinutes, closeTo(30, 1));
     });
 
-    test('defaults to Active with no status when the fields are missing', () {
-      final json = _profileJson()
-        ..remove('icon')
-        ..remove('text')
-        ..remove('pause_notification')
-        ..remove('status_timeout')
-        ..remove('online');
+    test('maps parsed status onto User entity via toEntity()', () {
+      final model = ProfileModel.fromJson(
+        _profileJson(
+          extra: {'icon': '\u{1F680}', 'text': 'Deploying', 'online': true},
+        ),
+      );
 
-      final status = ProfileModel.fromJson(json).toEntity().status;
+      final user = model.toEntity();
 
-      expect(status.hasCustomStatus, isFalse);
-      expect(status.pauseNotifications, isFalse);
-      expect(status.online, isTrue);
+      expect(user.id, 'user-1');
+      expect(user.status.emoji, '\u{1F680}');
+      expect(user.status.text, 'Deploying');
+      expect(user.status.online, isTrue);
+      expect(user.status.hasCustomStatus, isTrue);
     });
   });
 }

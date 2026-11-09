@@ -12,8 +12,12 @@ abstract class PeopleRemoteDataSource {
 /// Lists members the way the web app's `useOrganisationUsers` does.
 class PeopleRemoteDataSourceImpl implements PeopleRemoteDataSource {
   final ApiBaseService apiBaseService;
+  final AppConfig config;
 
-  PeopleRemoteDataSourceImpl({required this.apiBaseService});
+  PeopleRemoteDataSourceImpl({
+    required this.apiBaseService,
+    required this.config,
+  });
 
   /// Members per page, as the web app asks for.
   static const pageSize = 50;
@@ -24,6 +28,10 @@ class PeopleRemoteDataSourceImpl implements PeopleRemoteDataSource {
     int page = 1,
     String search = '',
   }) async {
+    // The mock build has no people to list, and staging rejects its token.
+    if (config.usesMockData) {
+      return const MembersPage(members: []);
+    }
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/organisations/$orgId/users',
       queryParameters: {

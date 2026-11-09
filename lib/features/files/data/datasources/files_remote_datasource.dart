@@ -59,6 +59,10 @@ abstract class FilesRemoteDataSource {
   /// File [fileId] as `GET /files/file/{id}` reports it now.
   Future<WorkspaceFile> fetchFileDetails(String fileId);
 
+  /// What `GET /files/file/{id}/info` says about the file, including the
+  /// channels it was shared in.
+  Future<WorkspaceFileInfo> fetchFileInfo(String fileId);
+
   /// Ids of the files the user pinned, from `GET /files/favorites`.
   Future<Set<String>> fetchPinnedFileIds();
 
@@ -89,19 +93,31 @@ abstract class FilesRemoteDataSource {
 /// the organisation from the signed-in session.
 class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
   final ApiBaseService apiBaseService;
+  final AppConfig config;
 
   /// Fetches file contents from their storage links. It is a plain client,
   /// so the session token is never sent to the storage host.
   final Dio downloadClient;
 
-  FilesRemoteDataSourceImpl({required this.apiBaseService, Dio? downloadClient})
-    : downloadClient = downloadClient ?? Dio();
+  FilesRemoteDataSourceImpl({
+    required this.apiBaseService,
+    required this.config,
+    Dio? downloadClient,
+  }) : downloadClient = downloadClient ?? Dio();
+
+  /// The mock build has no files to serve, and staging rejects its token, so
+  /// changes fail here instead of sending a request that signs the user out.
+  static const _mockBuildFailure = ApiFailure(
+    message: 'Not available in the mock build.',
+    kind: ApiFailureKind.client,
+  );
 
   /// Folders per page, as the web app asks for.
   static const pageSize = 10;
 
   @override
   Future<FilesPage> fetchFiles(FilesQuery query) async {
+    if (config.usesMockData) return const FilesPage(files: []);
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/files',
       queryParameters: query.toQueryParameters(),
@@ -131,6 +147,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     String? parentId,
     int page = 1,
   }) async {
+    if (config.usesMockData) return const FoldersPage(folders: []);
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/files/folders',
       queryParameters: {
@@ -159,6 +176,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
   /// files it at the top level of the user's files.
   @override
   Future<WorkspaceFile> uploadFile(XFile file, {String? parentId}) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final mime = file.mimeType;
     final type = mime != null && mime.contains('/')
         ? DioMediaType.parse(mime)
@@ -208,6 +226,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     required String orgId,
     String? parentId,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.post<Map<String, dynamic>>(
       path: '/files/folders',
       data: {
@@ -220,6 +239,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
 
   @override
   Future<String> fetchFileLink(String fileId) async {
+    if (config.usesMockData) return '';
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/files/file/$fileId',
     );
@@ -233,6 +253,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     required String savePath,
     void Function(int received, int total)? onProgress,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     try {
       await downloadClient.download(
         url,
@@ -246,6 +267,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
 
   @override
   Future<void> deleteFile(String fileId, {bool permanent = false}) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.delete<dynamic>(
       path: '/files/file/$fileId',
       queryParameters: permanent ? const {'permanent': true} : null,
@@ -254,6 +276,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
 
   @override
   Future<void> renameFile(String fileId, String name) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.put<dynamic>(
       path: '/files/file/$fileId',
       data: {'file_name': name},
@@ -262,6 +285,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
 
   @override
   Future<void> moveFile(String fileId, String folderId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.put<dynamic>(
       path: '/files/$fileId/move',
       data: {'folder_id': folderId},
@@ -276,6 +300,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     required FileShareAccess access,
     String note = '',
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final response = await apiBaseService.post<Map<String, dynamic>>(
       path: '/files/$fileId/share',
       data: {
@@ -298,6 +323,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
     required String url,
     required int maxBytes,
   }) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final cancel = CancelToken();
     try {
       final response = await downloadClient.get<List<int>>(
@@ -328,6 +354,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
 
   @override
   Future<WorkspaceFile> fetchFileDetails(String fileId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     final path = '/files/file/$fileId';
     final response = await apiBaseService.get<Map<String, dynamic>>(path: path);
     final data = response.data['data'];
@@ -342,7 +369,24 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
   }
 
   @override
+  Future<WorkspaceFileInfo> fetchFileInfo(String fileId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
+    final path = '/files/file/$fileId/info';
+    final response = await apiBaseService.get<Map<String, dynamic>>(path: path);
+    final data = response.data['data'];
+    if (data is! Map) {
+      throw ApiFailure(
+        message: 'File info missing from the response.',
+        path: path,
+        kind: ApiFailureKind.parsing,
+      );
+    }
+    return WorkspaceFileInfo.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
   Future<Set<String>> fetchPinnedFileIds() async {
+    if (config.usesMockData) return const <String>{};
     final response = await apiBaseService.get<Map<String, dynamic>>(
       path: '/files/favorites',
     );
@@ -363,11 +407,13 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
 
   @override
   Future<void> pinFile(String fileId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.post<dynamic>(path: '/files/file/$fileId/pin');
   }
 
   @override
   Future<void> unpinFile(String fileId) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.delete<dynamic>(path: '/files/file/$fileId/pin');
   }
 
@@ -375,6 +421,7 @@ class FilesRemoteDataSourceImpl implements FilesRemoteDataSource {
   /// folder and its contents.
   @override
   Future<void> deleteFolder(String id) async {
+    if (config.usesMockData) throw _mockBuildFailure;
     await apiBaseService.delete<Map<String, dynamic>>(
       path: '/files/folders/$id',
     );

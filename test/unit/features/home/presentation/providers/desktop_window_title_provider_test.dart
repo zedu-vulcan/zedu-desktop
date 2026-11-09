@@ -99,7 +99,6 @@ void main() {
                   id: 'ws-1',
                   name: 'Zedu Workspace',
                   avatar: '',
-                  membersCount: 5,
                 ),
               ),
             ),
@@ -135,7 +134,6 @@ void main() {
                   id: 'ws-1',
                   name: 'Zedu Workspace',
                   avatar: '',
-                  membersCount: 5,
                 ),
               ),
             ),
@@ -167,10 +165,7 @@ void main() {
       expect(title, 'Ada Okafor · Zedu');
     });
 
-    ProviderContainer groupContainer(
-      ActiveChatState activeChat,
-      List<GroupDM> groups,
-    ) {
+    test('excludes open channel unread count and archived channels', () async {
       final container = ProviderContainer(
         overrides: [
           authNotifierProvider.overrideWith(
@@ -183,52 +178,109 @@ void main() {
               const WorkspaceState(
                 selectedWorkspace: Workspace(
                   id: 'ws-1',
-                  name: 'Zedu Workspace',
+                  name: 'Zedu',
                   avatar: '',
-                  channelsCount: 5,
                 ),
               ),
             ),
           ),
-          activeChatProvider.overrideWith(
-            () => _FakeActiveChatNotifier(activeChat),
+          channelProvider.overrideWith(
+            () => _FakeChannelNotifier([
+              Channel(
+                id: 'ch-1',
+                name: 'design',
+                description: '',
+                organisationId: 'ws-1',
+                ownerId: 'u1',
+                unreadCount: 4,
+              ),
+              Channel(
+                id: 'ch-2',
+                name: 'dev',
+                description: '',
+                organisationId: 'ws-1',
+                ownerId: 'u1',
+                unreadCount: 2,
+              ),
+              Channel(
+                id: 'ch-3',
+                name: 'old',
+                description: '',
+                organisationId: 'ws-1',
+                ownerId: 'u1',
+                archived: true,
+                unreadCount: 9,
+              ),
+            ]),
           ),
-          groupDmProvider.overrideWith(() => _FakeGroupDmNotifier(groups)),
+          activeChatProvider.overrideWith(
+            () => _FakeActiveChatNotifier(
+              const ActiveChatState(type: ActiveChatType.channel, id: 'design'),
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
-      return container;
-    }
 
-    test('names the open group chat instead of "Group Chat" (#2750)', () {
-      final container = groupContainer(
-        const ActiveChatState(type: ActiveChatType.groupDm, id: 'g-1'),
-        const [GroupDM(id: 'g-1', name: 'Design Crew', members: [])],
-      );
-
-      expect(container.read(desktopWindowTitleProvider), 'Design Crew · Zedu');
+      await container.read(channelProvider.future);
+      final title = container.read(desktopWindowTitleProvider);
+      expect(title, '(2) Design · Zedu');
     });
 
-    test('counts unread messages in group chats that are not open', () {
-      final container = groupContainer(
-        const ActiveChatState(type: ActiveChatType.channel, id: 'general'),
-        const [
-          GroupDM(id: 'g-1', name: 'Design Crew', members: [], unreadCount: 4),
+    test('matches active channel by id as well as by name', () async {
+      final container = ProviderContainer(
+        overrides: [
+          authNotifierProvider.overrideWith(
+            () => _FakeAuthNotifier(
+              const AuthState(status: AuthStatus.authenticated),
+            ),
+          ),
+          workspaceProvider.overrideWith(
+            () => _FakeWorkspaceNotifier(
+              const WorkspaceState(
+                selectedWorkspace: Workspace(
+                  id: 'ws-1',
+                  name: 'Zedu',
+                  avatar: '',
+                ),
+              ),
+            ),
+          ),
+          channelProvider.overrideWith(
+            () => _FakeChannelNotifier([
+              Channel(
+                id: 'ch-uuid-1',
+                name: 'announcements',
+                description: '',
+                organisationId: 'ws-1',
+                ownerId: 'u1',
+                unreadCount: 5,
+              ),
+              Channel(
+                id: 'ch-uuid-2',
+                name: 'random',
+                description: '',
+                organisationId: 'ws-1',
+                ownerId: 'u1',
+                unreadCount: 3,
+              ),
+            ]),
+          ),
+          activeChatProvider.overrideWith(
+            () => _FakeActiveChatNotifier(
+              const ActiveChatState(
+                type: ActiveChatType.channel,
+                id: 'ch-uuid-1',
+              ),
+            ),
+          ),
         ],
       );
+      addTearDown(container.dispose);
 
-      expect(container.read(desktopWindowTitleProvider), '(4) General · Zedu');
-    });
-
-    test('leaves the open group chat out of the unread count', () {
-      final container = groupContainer(
-        const ActiveChatState(type: ActiveChatType.groupDm, id: 'g-1'),
-        const [
-          GroupDM(id: 'g-1', name: 'Design Crew', members: [], unreadCount: 2),
-        ],
-      );
-
-      expect(container.read(desktopWindowTitleProvider), 'Design Crew · Zedu');
+      await container.read(channelProvider.future);
+      final title = container.read(desktopWindowTitleProvider);
+      expect(title, '(3) Announcements · Zedu');
     });
   });
 }
@@ -265,10 +317,10 @@ class _FakeSelectedDmNotifier extends SelectedDmNotifier {
   DmConversation? build() => _initial;
 }
 
-class _FakeGroupDmNotifier extends GroupDmNotifier {
-  final List<GroupDM> _initial;
-  _FakeGroupDmNotifier(this._initial);
+class _FakeChannelNotifier extends ChannelNotifier {
+  final List<Channel> _initial;
+  _FakeChannelNotifier(this._initial);
 
   @override
-  List<GroupDM> build() => _initial;
+  Future<List<Channel>> build() async => _initial;
 }

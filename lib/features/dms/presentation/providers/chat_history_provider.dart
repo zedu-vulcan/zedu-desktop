@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:zedu/core/core.dart';
 import 'package:zedu/features/features.dart';
 
@@ -37,6 +39,21 @@ class ChatHistoryNotifier extends ChangeNotifier {
   /// not put the old text back over the edit.
   final Set<String> _editsInFlight = {};
 
+  /// Messages being sent right now, so a second send of the same message is a
+  /// no-op instead of a duplicate.
+  final Set<String> _sendsInFlight = {};
+
+  /// What is known about messages that failed to send: how many attempts they
+  /// had and when the first one started, which is what lets a retry recognise
+  /// a copy that already reached the server.
+  final Map<String, OutboundSend> _outboundSends = {};
+
+  /// Automatic retries waiting to run, cancelled when the message gets through
+  /// or the conversation closes.
+  final Map<String, Timer> _retryTimers = {};
+
+  static const SendRetryPolicy _retryPolicy = SendRetryPolicy();
+
   ChatHistoryNotifier(this.channelId, this.ref) {
     _fileStore = ref.read(composerFileStoreProvider);
     _loadInitial();
@@ -46,6 +63,9 @@ class ChatHistoryNotifier extends ChangeNotifier {
     final authState = ref.read(authNotifierProvider);
     return authState.user?.id ?? '';
   }
+
+  /// The signed-in user's id, or '' when signed out.
+  String get currentUserId => _currentUserId;
 
   String get currentUserName {
     final user = ref.read(authNotifierProvider).user;
@@ -161,10 +181,15 @@ class ChatHistoryNotifier extends ChangeNotifier {
         });
   }
 
+  /// True while a poll request is running. A slow response must not be
+  /// overlapped by the next tick, or requests pile up (#2656).
+  bool _pollInFlight = false;
+
   Future<void> _pollForNewMessages() async {
     // Until the history loads, every polled message would look new.
-    if (loadFailed) return;
+    if (loadFailed || _pollInFlight) return;
     if (_isDisposed) return;
+    _pollInFlight = true;
     try {
       final repository = ref.read(dmRepositoryProvider);
       final fresh = await repository.getMessages(channelId, page: 1);
@@ -219,6 +244,8 @@ class ChatHistoryNotifier extends ChangeNotifier {
       if (changed) notifyListeners();
     } catch (_) {
       // Silent — polling failures should not surface to the UI.
+    } finally {
+      _pollInFlight = false;
     }
   }
 
@@ -247,32 +274,79 @@ class ChatHistoryNotifier extends ChangeNotifier {
     return changed;
   }
 
-  bool _sameJsonValue(Object? a, Object? b) {
-    if (identical(a, b) || a == b) return true;
-    if (a is List && b is List) {
-      final first = List<Object?>.from(a);
-      final second = List<Object?>.from(b);
-      if (first.length != second.length) return false;
+  /// Whether [messageId] is being sent right now.
+  bool isSending(String messageId) => _sendsInFlight.contains(messageId);
 
-      for (var index = 0; index < first.length; index++) {
-        if (!_sameJsonValue(first[index], second[index])) return false;
+  /// How long until [messageId] is retried by itself, or null when it will not
+  /// be retried again and the person has to choose.
+  Duration? retryIn(String messageId) {
+    final record = _outboundSends[messageId];
+    if (record == null || !_retryPolicy.canRetry(record.attempts)) return null;
+    return _retryPolicy.delayBefore(record.attempts + 1);
+  }
+
+  /// The newest message on the server that is already a copy of [send].
+  ///
+  /// Best effort: if the lookup fails the retry still runs, which is exactly
+  /// what happened before this check existed.
+  Future<Map<String, dynamic>?> _findDeliveredCopy(OutboundSend send) async {
+    try {
+      final repository = ref.read(dmRepositoryProvider);
+      final page = await repository.getMessages(channelId, page: 1);
+      if (_isDisposed) return null;
+      return findDeliveredCopy(page, send: send, senderId: _currentUserId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Treats [messageId] as sent, using the copy that is already on the server.
+  void _markDelivered(String messageId, Map<String, dynamic> delivered) {
+    _outboundSends.remove(messageId);
+    _cancelRetry(messageId);
+    // The attempt that already landed keeps its recording only until now: the
+    // message is delivered, so the local copy is no longer needed for a retry.
+    _deleteRecordings(_sendOptions.remove(messageId)?.media);
+    final threadId = (delivered['thread_id'] ?? delivered['id'])?.toString();
+    messages = messages.map((m) {
+      if (m['id'] != messageId) return m;
+      final updated = Map<String, dynamic>.from(m);
+      updated.remove('status');
+      if (threadId != null && threadId.isNotEmpty) {
+        updated['thread_id'] = threadId;
       }
-      return true;
-    }
-    if (a is Map && b is Map) {
-      return a.length == b.length &&
-          a.entries.every(
-            (entry) =>
-                b.containsKey(entry.key) &&
-                _sameJsonValue(entry.value, b[entry.key]),
-          );
-    }
-    return false;
+      return updated;
+    }).toList();
+    notifyListeners();
+  }
+
+  void _scheduleRetry(String messageId) {
+    final record = _outboundSends[messageId];
+    if (record == null || !_retryPolicy.canRetry(record.attempts)) return;
+    _cancelRetry(messageId);
+    _retryTimers[messageId] = Timer(
+      _retryPolicy.delayBefore(record.attempts + 1),
+      () {
+        _retryTimers.remove(messageId);
+        if (_isDisposed) return;
+        unawaited(retryMessage(messageId));
+      },
+    );
+  }
+
+  void _cancelRetry(String messageId) {
+    _retryTimers.remove(messageId)?.cancel();
   }
 
   @override
   void dispose() {
     _isDisposed = true;
+    for (final timer in _retryTimers.values) {
+      timer.cancel();
+    }
+    _retryTimers.clear();
+    _sendsInFlight.clear();
+    _outboundSends.clear();
     (_pollingTimer as dynamic)?.cancel();
     // Recordings kept for messages that never sent are no longer needed.
     for (final options in _sendOptions.values) {
@@ -325,16 +399,23 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
   /// Loads every remaining page, for views that need the whole conversation
   /// (such as its files). Waits for a load already in flight, and stops after
-  /// [maxPages] pages or when a page fails, so it can't loop forever.
+  /// [maxPages] pages, when a page fails, or once this notifier is disposed.
+  ///
+  /// A load interrupted by dispose() never clears [isLoading] (its finally
+  /// skips the update on a disposed notifier), so the wait checks for
+  /// disposal too; otherwise a caller such as the conversation files dialog
+  /// would keep waking every 50 ms forever after the conversation closed
+  /// (#2939).
   Future<void> loadAll({int maxPages = 50}) async {
     for (var i = 0; i < maxPages && hasMore; i++) {
       while (isLoading) {
+        if (_isDisposed) return;
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
-      if (!hasMore) break;
+      if (_isDisposed || !hasMore) return;
       final before = page;
       await loadMore();
-      if (page == before) break; // the page failed to load
+      if (_isDisposed || page == before) return; // closed, or the page failed
     }
   }
 
@@ -386,11 +467,27 @@ class ChatHistoryNotifier extends ChangeNotifier {
         ],
     };
 
+    // The same text must not be in flight twice. A double Enter, or a double
+    // click on Send, would otherwise post two messages before either resolves.
+    final normalised = normaliseMessageText(content);
+    final sameTextInFlight = _outboundSends.entries.any(
+      (entry) =>
+          _sendsInFlight.contains(entry.key) &&
+          normaliseMessageText(entry.value.content) == normalised,
+    );
+    if (sameTextInFlight) return;
+
     _sendOptions[tempId] = (
       media: media,
       mentions: mentions,
       isChannel: isChannel,
     );
+    _outboundSends[tempId] = OutboundSend.starting(
+      clientId: tempId,
+      content: content,
+      at: DateTime.now(),
+    );
+    _sendsInFlight.add(tempId);
     messages = [optimisticMessage, ...messages];
     notifyListeners();
 
@@ -404,6 +501,8 @@ class ChatHistoryNotifier extends ChangeNotifier {
         isChannel: isChannel,
       );
       _sendOptions.remove(tempId);
+      _outboundSends.remove(tempId);
+      _cancelRetry(tempId);
       _deleteRecordings(media);
 
       messages = messages.map((m) {
@@ -431,12 +530,30 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
+      // Try again by itself, within the policy's attempt budget.
+      _scheduleRetry(tempId);
     } finally {
+      _sendsInFlight.remove(tempId);
       if (!_isDisposed) notifyListeners();
     }
   }
 
   Future<void> retryMessage(String messageId) async {
+    // A message already being sent cannot be sent again: a second tap on
+    // Retry would otherwise post it twice. The slot is taken before the first
+    // await, because the delivered-copy lookup below is itself asynchronous
+    // and a second tap during it would otherwise start a second request.
+    if (!_sendsInFlight.add(messageId)) return;
+    try {
+      await _retryMessageNow(messageId);
+    } finally {
+      _sendsInFlight.remove(messageId);
+    }
+  }
+
+  Future<void> _retryMessageNow(String messageId) async {
+    _cancelRetry(messageId);
+
     final idx = messages.indexWhere((m) => m['id'] == messageId);
     // Status changes to sending synchronously below, so repeated callbacks
     // cannot start another request for this message before the view rebuilds.
@@ -444,6 +561,24 @@ class ChatHistoryNotifier extends ChangeNotifier {
 
     final failedMsg = Map<String, dynamic>.from(messages[idx]);
     final content = failedMsg['content'] as String? ?? '';
+
+    // An earlier attempt may have been committed even though the client saw a
+    // failure (a response timeout, for example). Adopt that copy instead of
+    // sending a second one.
+    final record = _outboundSends[messageId];
+    if (record != null && record.hasBeenAttempted) {
+      final delivered = await _findDeliveredCopy(record);
+      if (_isDisposed) return;
+      if (delivered != null) {
+        _markDelivered(messageId, delivered);
+        return;
+      }
+    }
+
+    final now = DateTime.now();
+    _outboundSends[messageId] = record == null
+        ? OutboundSend.starting(clientId: messageId, content: content, at: now)
+        : record.withAnotherAttempt(now);
 
     failedMsg['status'] = 'sending';
     messages = List<Map<String, dynamic>>.from(messages);
@@ -462,6 +597,8 @@ class ChatHistoryNotifier extends ChangeNotifier {
             failedMsg['is_channel'] as bool? ?? options?.isChannel ?? false,
       );
       _sendOptions.remove(messageId);
+      _outboundSends.remove(messageId);
+      _cancelRetry(messageId);
       _deleteRecordings(options?.media);
 
       messages = messages.map((m) {
@@ -489,6 +626,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
+      _scheduleRetry(messageId);
     } finally {
       if (!_isDisposed) notifyListeners();
     }
@@ -626,19 +764,20 @@ class ChatHistoryNotifier extends ChangeNotifier {
       }
       return m;
     }).toList();
-    if (editingMessageId == messageId) {
-      editingMessageId = null;
-    }
     notifyListeners();
 
     _editsInFlight.add(messageId);
     try {
       final repository = ref.read(dmRepositoryProvider);
       await repository.editMessage(
-        messageId,
+        channelId,
         content: newContent,
         threadId: threadId,
       );
+      // Only clear editing state after successful save
+      if (editingMessageId == messageId) {
+        editingMessageId = null;
+      }
     } catch (e, st) {
       AppLogger.e(
         'Failed to save edit for message $messageId in channel $channelId',
@@ -666,3 +805,24 @@ final chatHistoryProvider = ChangeNotifierProvider.autoDispose
     .family<ChatHistoryNotifier, String>(
       (ref, channelId) => ChatHistoryNotifier(channelId, ref),
     );
+
+// Polling payloads contain nested maps and arrays. Map identity must not turn
+// an unchanged server response into a chat refresh.
+bool _sameJsonValue(Object? left, Object? right) {
+  if (identical(left, right)) return true;
+  if (left is Map && right is Map) {
+    return left.length == right.length &&
+        left.keys.every(
+          (key) =>
+              right.containsKey(key) && _sameJsonValue(left[key], right[key]),
+        );
+  }
+  if (left is List && right is List) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (!_sameJsonValue(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  return left == right;
+}

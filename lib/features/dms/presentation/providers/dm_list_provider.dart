@@ -119,12 +119,17 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
   /// dropped.
   int _listVersion = 0;
 
+  /// The list version of the "load more" call in flight, so a second scroll
+  /// does not fetch and append the same page again.
+  int? _loadingMoreVersion;
+
   bool get hasMore => _hasMore;
 
   @override
   Future<List<DmConversation>> build() async {
     final orgId = ref.watch(currentOrgIdProvider);
     _listVersion++;
+    _loadingMoreVersion = null;
     if (orgId.isEmpty) return const [];
 
     _currentPage = 1;
@@ -136,13 +141,12 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
     final repository = ref.read(dmRepositoryProvider);
     final version = _listVersion;
     final results = await repository.getConversations(orgId: orgId, page: page);
-    if (version == _listVersion && results.length < DmRepository.pageSize) {
-      _hasMore = false;
+    if (version == _listVersion) {
+      _hasMore = results.hasMore;
     }
-
     final usesMockData =
         locator.isRegistered<AppConfig>() && locator<AppConfig>().usesMockData;
-    if (usesMockData && results.isEmpty && page == 1) {
+    if (usesMockData && results.conversations.isEmpty && page == 1) {
       return [
         DmConversation(
           channelId: 'mock-channel-id-123',
@@ -155,23 +159,37 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
       ];
     }
 
-    return results;
+    return results.conversations;
   }
 
   Future<void> loadMore() async {
     if (!_hasMore) return;
+    // A scroll can end several times before the first page arrives. Both calls
+    // would fetch the same page and append it, showing every row twice.
+    if (_loadingMoreVersion == _listVersion) return;
     final orgId = ref.read(currentOrgIdProvider);
     if (orgId.isEmpty) return;
 
     final current = state.value ?? [];
     final version = _listVersion;
+    _loadingMoreVersion = version;
     // Only count the page once it has loaded, so a failed load is asked for
     // again on the next scroll instead of being skipped.
     final page = _currentPage + 1;
-    final next = await _fetchPage(orgId, page);
-    if (version != _listVersion) return;
-    _currentPage = page;
-    state = AsyncValue.data([...current, ...next]);
+    try {
+      final next = await _fetchPage(orgId, page);
+      if (version != _listVersion) return;
+      _currentPage = page;
+      // A conversation can arrive between two page requests, shifting the
+      // offset and returning one already listed. Keep the list unique too.
+      final knownKeys = current.map((c) => c.conversationKey).toSet();
+      state = AsyncValue.data([
+        ...current,
+        ...next.where((c) => knownKeys.add(c.conversationKey)),
+      ]);
+    } finally {
+      if (_loadingMoreVersion == version) _loadingMoreVersion = null;
+    }
   }
 
   Future<void> refresh() async {
@@ -179,6 +197,7 @@ class DmListNotifier extends AsyncNotifier<List<DmConversation>> {
     if (orgId.isEmpty) return;
 
     _listVersion++;
+    _loadingMoreVersion = null;
     _currentPage = 1;
     _hasMore = true;
     state = const AsyncValue.loading();
@@ -221,10 +240,10 @@ class DmSearchResultsNotifier extends AsyncNotifier<List<DmConversation>> {
       page: page,
       search: query,
     );
-    if (version == _searchVersion && results.length < DmRepository.pageSize) {
-      _hasMore = false;
+    if (version == _searchVersion) {
+      _hasMore = results.hasMore;
     }
-    return results;
+    return results.conversations;
   }
 
   Future<void> loadMore() async {

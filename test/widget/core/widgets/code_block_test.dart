@@ -98,6 +98,27 @@ void main() {
 
       expect(find.byIcon(Icons.check), findsOneWidget);
     });
+
+    testWidgets('wraps horizontal code scroll view with a Scrollbar', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const CodeBlock(
+          code: 'very long line of code that scrolls horizontally',
+          language: 'dart',
+        ),
+      );
+
+      final scrollbarFinder = find.byType(Scrollbar);
+      expect(scrollbarFinder, findsOneWidget);
+
+      final scrollView = find.descendant(
+        of: scrollbarFinder,
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(scrollView, findsOneWidget);
+    });
   });
 
   group('MessageBubble code blocks', () {

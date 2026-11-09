@@ -45,9 +45,14 @@ void main() {
   });
 
   void givenConversations(Workspace workspace, List<DmConversation> items) {
-    when(
-      () => dms.getConversations(orgId: workspace.id),
-    ).thenAnswer((_) async => items);
+    when(() => dms.getConversations(orgId: workspace.id)).thenAnswer(
+      (_) async => DmConversationsPage(
+        conversations: items,
+        currentPage: 1,
+        totalPages: 1,
+        totalItems: items.length,
+      ),
+    );
   }
 
   test('merges every workspace and orders newest first', () async {
