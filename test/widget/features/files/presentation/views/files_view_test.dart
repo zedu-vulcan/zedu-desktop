@@ -197,10 +197,12 @@ class _FakeFilesRepository extends Fake implements FilesRepository {
   }
 
   Result<void> renameResult = const Success(null);
+  Object? renameException;
 
   @override
   Future<Result<void>> renameFile(String fileId, String name) async {
     renames.add((fileId, name));
+    if (renameException != null) throw renameException!;
     return renameResult;
   }
 
@@ -901,6 +903,32 @@ void main() {
     );
     expect(find.text('logo.png'), findsOneWidget);
   });
+
+  testWidgets(
+    'an unhandled exception during rename displays error message and re-enables submit button',
+    (tester) async {
+      final repository = _FakeFilesRepository()
+        ..renameException = Exception('Network connection reset');
+      await _pump(tester, repository);
+      await openFilesTab(tester);
+
+      await chooseInMenu(tester, 'Rename');
+      expect(find.text('Rename file'), findsOneWidget);
+      await tester.enterText(renameField(), 'brand.png');
+      await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rename file'), findsOneWidget);
+      expect(
+        find.text('Failed to rename file. Please check your connection.'),
+        findsOneWidget,
+      );
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Rename'),
+      );
+      expect(button.onPressed, isNotNull);
+    },
+  );
 
   testWidgets('deleted files cannot be renamed', (tester) async {
     await _pump(tester, _FakeFilesRepository());

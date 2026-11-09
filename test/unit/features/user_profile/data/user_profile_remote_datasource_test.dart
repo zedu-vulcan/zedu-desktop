@@ -119,7 +119,7 @@ void main() {
 
         expect(roles.single.role, 'Manager');
         expect(roles.single.description, 'Runs the workspace');
-        expect(roles.single.permissions, ['can_create_channels']);
+        expect(roles.single.permissions, ['Create channels']);
       },
     );
 

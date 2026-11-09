@@ -79,6 +79,29 @@ void main() {
       expect(find.byType(Image), findsNothing);
     });
   }
+
+  testWidgets('copy button copies file name to clipboard and shows toast', (
+    tester,
+  ) async {
+    const file = WorkspaceFile(
+      id: 'copy-test',
+      name: 'quarterly_results.xlsx',
+      fileType: 'xlsx',
+    );
+    await showFile(tester, file);
+    await tester.pumpAndSettle();
+
+    expect(find.text('quarterly_results.xlsx'), findsOneWidget);
+    final copyBtn = find.byTooltip('Copy file name');
+    expect(copyBtn, findsOneWidget);
+
+    await tester.tap(copyBtn);
+    await tester.pumpAndSettle();
+
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    expect(data?.text, 'quarterly_results.xlsx');
+    expect(find.text('File name copied'), findsOneWidget);
+  });
 }
 
 final _svgBytes = utf8.encode(

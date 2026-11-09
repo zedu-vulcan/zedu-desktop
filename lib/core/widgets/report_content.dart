@@ -28,19 +28,33 @@ Future<void> reportContent(
   }
 }
 
-/// Wraps a message from someone else with a "Report message" action, shown on
-/// hover, right-click or long-press.
+/// Copies [text] to the clipboard and confirms it with a short toast. Blank
+/// text copies nothing.
+Future<void> copyMessageText(BuildContext context, String text) async {
+  if (text.trim().isEmpty) return;
+  await Clipboard.setData(ClipboardData(text: text));
+  if (!context.mounted) return;
+  AppToastService.show(context, type: AppToastType.success, message: 'Copied');
+}
+
+/// Wraps a message with a "Report message" action, and a "Copy text" action
+/// when [copyText] is set, shown on hover, right-click or long-press.
 class ReportMessageMenu extends StatefulWidget {
   const ReportMessageMenu({
     super.key,
     required this.senderName,
     required this.messageText,
     required this.child,
+    this.copyText,
   });
 
   final String senderName;
   final String messageText;
   final Widget child;
+
+  /// The message as people read it, without Markdown marks. When it has text,
+  /// the menu offers "Copy text".
+  final String? copyText;
 
   @override
   State<ReportMessageMenu> createState() => _ReportMessageMenuState();
@@ -69,15 +83,29 @@ class _ReportMessageMenuState extends State<ReportMessageMenu> {
                 key: _menuKey,
                 tooltip: 'Message actions',
                 icon: const Icon(Icons.more_horiz, size: 18),
-                onSelected: (_) => reportContent(
-                  context,
-                  subject: 'Report: message from ${widget.senderName}',
-                  details:
-                      'Message from ${widget.senderName}:\n'
-                      '"${widget.messageText}"',
-                ),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'report', child: Text('Report message')),
+                onSelected: (value) {
+                  if (value == 'copy') {
+                    copyMessageText(context, widget.copyText ?? '');
+                    return;
+                  }
+                  reportContent(
+                    context,
+                    subject: 'Report: message from ${widget.senderName}',
+                    details:
+                        'Message from ${widget.senderName}:\n'
+                        '"${widget.messageText}"',
+                  );
+                },
+                itemBuilder: (_) => [
+                  if (widget.copyText?.trim().isNotEmpty ?? false)
+                    const PopupMenuItem(
+                      value: 'copy',
+                      child: Text('Copy text'),
+                    ),
+                  const PopupMenuItem(
+                    value: 'report',
+                    child: Text('Report message'),
+                  ),
                 ],
               ),
             ),

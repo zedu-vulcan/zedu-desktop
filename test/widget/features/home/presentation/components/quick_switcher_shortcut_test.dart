@@ -135,6 +135,17 @@ Future<void> _pressCtrlSlash(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _pressRailDigit(
+  WidgetTester tester,
+  LogicalKeyboardKey digit, {
+  LogicalKeyboardKey modifier = LogicalKeyboardKey.controlLeft,
+}) async {
+  await tester.sendKeyDownEvent(modifier);
+  await tester.sendKeyEvent(digit);
+  await tester.sendKeyUpEvent(modifier);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('Keyboard shortcuts list', () {
     testWidgets('Ctrl+/ opens it, even with a text field focused', (
@@ -392,6 +403,82 @@ void main() {
       await _pump(tester, withTextField: false);
       // No text field or other control holds focus, only the page itself.
       expect(FocusManager.instance.primaryFocus, isA<FocusScopeNode>());
+
+      await _pressCtrlK(tester);
+
+      expect(find.byType(QuickSwitcherDialog), findsOneWidget);
+    });
+  });
+
+  group('Ctrl+1 to Ctrl+4 (rail destinations)', () {
+    const digits = [
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+    ];
+    const destinations = [
+      HomeSidebarType.home,
+      HomeSidebarType.dms,
+      HomeSidebarType.people,
+      HomeSidebarType.files,
+    ];
+
+    testWidgets('Ctrl+1 to Ctrl+4 open Home, DMs, People and Files, even '
+        'with a text field focused', (tester) async {
+      final container = await _pump(tester);
+
+      for (var i = 0; i < digits.length; i++) {
+        await _pressRailDigit(tester, digits[i]);
+        expect(container.read(homeSidebarProvider), destinations[i]);
+      }
+    });
+
+    testWidgets('Cmd+1 to Cmd+4 open them too', (tester) async {
+      final container = await _pump(tester);
+
+      for (var i = 0; i < digits.length; i++) {
+        await _pressRailDigit(
+          tester,
+          digits[i],
+          modifier: LogicalKeyboardKey.metaLeft,
+        );
+        expect(container.read(homeSidebarProvider), destinations[i]);
+      }
+    });
+
+    testWidgets('from another screen they go to Home first', (tester) async {
+      final container = await _pump(tester);
+      expect(find.text('home screen'), findsNothing);
+
+      await _pressRailDigit(tester, LogicalKeyboardKey.digit2);
+
+      expect(container.read(homeSidebarProvider), HomeSidebarType.dms);
+      expect(find.text('home screen'), findsOneWidget);
+    });
+
+    testWidgets('Ctrl+5 and a bare digit do nothing', (tester) async {
+      final container = await _pump(tester);
+
+      await _pressRailDigit(tester, LogicalKeyboardKey.digit5);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      await tester.pumpAndSettle();
+
+      expect(container.read(homeSidebarProvider), HomeSidebarType.home);
+      expect(find.text('home screen'), findsNothing);
+    });
+
+    testWidgets('do nothing when signed out', (tester) async {
+      final container = await _pump(tester, status: AuthStatus.unauthenticated);
+
+      await _pressRailDigit(tester, LogicalKeyboardKey.digit2);
+
+      expect(container.read(homeSidebarProvider), HomeSidebarType.home);
+      expect(find.text('home screen'), findsNothing);
+    });
+
+    testWidgets('Ctrl+K still opens the switcher', (tester) async {
+      await _pump(tester);
 
       await _pressCtrlK(tester);
 

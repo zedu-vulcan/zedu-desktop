@@ -82,6 +82,17 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
   int _mentionIndex = 0;
   String _mentionQuery = '';
 
+  /// Channels offered while typing #name, like web.
+  List<Channel> _channelSuggestions = [];
+
+  /// Channels picked from the # list, by name, so the message carries them
+  /// as channel mentions while their #name is still in the text.
+  final Map<String, String> _pickedChannels = {};
+
+  /// Keeps the workspace channels loaded once a #name is typed, and shows
+  /// them as soon as they arrive.
+  ProviderSubscription<AsyncValue<List<Channel>>>? _channelsSub;
+
   /// Draft key this composer instance is currently bound to.
   String? _draftChannelId;
 
@@ -165,6 +176,7 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
   @override
   void dispose() {
+    _channelsSub?.close();
     // Flush any un-debounced text. The debounced save normally covers this;
     // the write is deferred because the store notifies providers, which isn't
     // allowed while the tree is unmounting.
@@ -334,27 +346,35 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     final text = _controller.text;
     final sel = _controller.selection;
     if (!sel.isValid || !sel.isCollapsed) {
-      setState(() => _mentionSuggestions = []);
-      return;
-    }
-    final before = text.substring(0, sel.baseOffset);
-    // Match an @-mention only when it appears at the start of the text or
-    // after whitespace. This prevents matching email addresses like
-    // "user@domain.com" while the user is typing an email.
-    final atMatch = RegExp(r'(?:^|\s)@(\w*)$').firstMatch(before);
-    if (atMatch == null) {
       setState(() {
         _mentionSuggestions = [];
-        _mentionQuery = '';
+        _channelSuggestions = [];
       });
       return;
     }
-    final query = atMatch.group(1)!.toLowerCase();
-    _mentionQuery = query;
-    final suggestions = widget.participants.where((p) {
-      return p.username.toLowerCase().contains(query) ||
-          p.email.toLowerCase().contains(query);
-    }).toList();
+    final before = text.substring(0, sel.baseOffset);
+    final query = mentionQueryBefore(before);
+    final channelQuery = query == null ? channelQueryBefore(before) : null;
+    _mentionQuery = query ?? '';
+    if (channelQuery != null) {
+      _channelsSub ??= ref.listenManual(channelProvider, (_, _) {
+        if (mounted) _updateMentionSuggestions();
+      });
+    }
+    final channels = channelQuery == null
+        ? const <Channel>[]
+        : channelSuggestionsFor(
+            channelQuery,
+            ref.read(channelProvider).value ?? const [],
+          );
+    final suggestions = query == null
+        ? const <DmParticipant>[]
+        : mentionSuggestionsFor(
+            query,
+            widget.participants,
+            isChannel: widget.isChannel,
+          );
+    // Keep the highlighted person when the same list is shown again.
     final sameList =
         suggestions.length == _mentionSuggestions.length &&
         Iterable<int>.generate(
@@ -363,7 +383,31 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     setState(() {
       _mentionSuggestions = suggestions;
       if (!sameList) _mentionIndex = 0;
+      _channelSuggestions = channels;
     });
+  }
+
+  /// Replaces the #query before the caret with the picked channel's name.
+  void _insertChannel(Channel channel) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    if (sel.baseOffset < 0) return;
+    final before = text.substring(0, sel.baseOffset);
+    final hashIndex = before.lastIndexOf('#');
+    if (hashIndex == -1) return;
+    if (before.substring(hashIndex).contains(RegExp(r'\s'))) return;
+
+    final after = text.substring(sel.baseOffset);
+    final replacement = '#${channel.name} ';
+    _pickedChannels[channel.name] = channel.id;
+    _controller.value = TextEditingValue(
+      text: text.substring(0, hashIndex) + replacement + after,
+      selection: TextSelection.collapsed(
+        offset: hashIndex + replacement.length,
+      ),
+    );
+    setState(() => _channelSuggestions = []);
+    _focusNode.requestFocus();
   }
 
   /// Moves the highlighted @mention suggestion by [delta], wrapping around.
@@ -398,30 +442,16 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     _focusNode.requestFocus();
   }
 
-  /// The participants [text] @mentions, in the shape the server reads
-  /// (`{type, id}`), like the web composer. Without it the server sees only
-  /// the text "@name", records no mention and notifies nobody. Null when no
-  /// one is mentioned, so the request leaves the field out as before.
-  List<Map<String, String>>? _mentionsIn(String text) {
-    final mentions = <Map<String, String>>[];
-    final seen = <String>{};
-    for (final participant in widget.participants) {
-      final username = participant.username.trim();
-      if (participant.userId.isEmpty || username.isEmpty) continue;
-      // A whole @handle only: not part of an email or a longer handle.
-      final handle = RegExp(
-        '(?<![\\w@.])@${RegExp.escape(username)}(?![\\w.-])',
-        caseSensitive: false,
-      );
-      if (handle.hasMatch(text) && seen.add(participant.userId)) {
-        mentions.add({
-          'type': participant.userType == 'bot' ? 'bot' : 'user',
-          'id': participant.userId,
-        });
-      }
-    }
-    return mentions.isEmpty ? null : mentions;
-  }
+  /// The mentions [text] carries, in the shape the server reads, like the
+  /// web composer. Without it the server sees only the text "@name", records
+  /// no mention and notifies nobody. Null when there are none, so the request
+  /// leaves the field out as before.
+  List<Map<String, String>>? _mentionsIn(String text) => composerMentionsIn(
+    text,
+    participants: widget.participants,
+    isChannel: widget.isChannel,
+    pickedChannels: _pickedChannels,
+  );
 
   void _handleSend() {
     final text = _controller.text.trim();
@@ -627,6 +657,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         _insertMention(_highlightedMention);
         return KeyEventResult.handled;
       }
+      // Same for the #channel list.
+      if (!hasModifier && _channelSuggestions.isNotEmpty) {
+        _insertChannel(_channelSuggestions.first);
+        return KeyEventResult.handled;
+      }
       // Plain Enter, Ctrl+Enter and Cmd+Enter all share the send path, which
       // no-ops on an empty box. Handled either way, so no newline is added.
       _handleSend();
@@ -652,8 +687,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         _closeEmojiPicker();
         return KeyEventResult.handled;
       }
-      if (_mentionSuggestions.isNotEmpty) {
-        setState(() => _mentionSuggestions = []);
+      if (_mentionSuggestions.isNotEmpty || _channelSuggestions.isNotEmpty) {
+        setState(() {
+          _mentionSuggestions = [];
+          _channelSuggestions = [];
+        });
         return KeyEventResult.handled;
       }
       if (_showMoreActions) {
@@ -845,10 +883,13 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     final text = _controller.text;
     final sel = _controller.selection;
     final pos = sel.isValid ? sel.baseOffset : text.length;
-    final newText = '${text.substring(0, pos)}#${text.substring(pos)}';
+    // A # stuck to a word isn't read as a channel, so start a new token.
+    final needsSpace = pos > 0 && !RegExp(r'\s').hasMatch(text[pos - 1]);
+    final tag = needsSpace ? ' #' : '#';
+    final newText = '${text.substring(0, pos)}$tag${text.substring(pos)}';
     _controller.value = TextEditingValue(
       text: newText,
-      selection: TextSelection.collapsed(offset: pos + 1),
+      selection: TextSelection.collapsed(offset: pos + tag.length),
     );
     _focusNode.requestFocus();
   }
@@ -1348,6 +1389,12 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
             colors: colors,
             selectedIndex: _mentionIndex,
             onSelect: _insertMention,
+          ),
+        if (_channelSuggestions.isNotEmpty)
+          ChannelSuggestionList(
+            suggestions: _channelSuggestions,
+            colors: colors,
+            onSelect: _insertChannel,
           ),
 
         if (_showEmojiPicker)

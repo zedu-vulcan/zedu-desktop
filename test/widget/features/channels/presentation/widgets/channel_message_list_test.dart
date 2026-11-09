@@ -27,6 +27,15 @@ class _FakeAuthNotifier extends AuthNotifier {
   );
 }
 
+/// The real notifier loads the workspaces from the API.
+class _FakeWorkspaceNotifier extends WorkspaceNotifier {
+  @override
+  WorkspaceState build() => const WorkspaceState();
+
+  @override
+  Future<void> fetchWorkspaces() async {}
+}
+
 class FakeChatHistoryNotifier extends ChangeNotifier
     implements ChatHistoryNotifier {
   FakeChatHistoryNotifier(this.channelId);
@@ -372,6 +381,125 @@ void main() {
       expect(find.text('Sending attachment'), findsOneWidget);
       expect(find.text('pending_upload.pdf'), findsOneWidget);
       expect(find.text('Sending...'), findsOneWidget);
+    });
+  });
+
+  group('Copy text', () {
+    late List<String> copied;
+
+    setUp(() => copied = []);
+
+    void mockClipboard(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+    }
+
+    Future<void> pumpMessage(WidgetTester tester, String text) async {
+      mockClipboard(tester);
+      stubPage(
+        1,
+        _page([ChannelMessage(id: '1', senderName: 'Ada', text: text)]),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            channelRepositoryProvider.overrideWithValue(repository),
+            authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
+            workspaceProvider.overrideWith(_FakeWorkspaceNotifier.new),
+            chatHistoryProvider.overrideWith(
+              (ref, channelId) => fakeChatHistory,
+            ),
+          ],
+          retry: (_, _) => null,
+          child: buildTestMaterialApp(
+            const Scaffold(
+              body: ChannelMessageList(
+                channelId: 'ch-1',
+                empty: Text('Welcome to #general'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> rightClick(WidgetTester tester, Finder target) async {
+      final gesture = await tester.startGesture(
+        tester.getCenter(target),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the message actions menu offers Copy text beside Report '
+        'message, and copies the plain text', (tester) async {
+      await pumpMessage(tester, 'Ship **it** today');
+
+      await tester.tap(find.byTooltip('Message actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Copy text'), findsOneWidget);
+      expect(find.text('Report message'), findsOneWidget);
+
+      await tester.tap(find.text('Copy text'));
+      await tester.pump();
+
+      expect(copied, ['Ship it today']);
+      expect(find.text('Copied'), findsOneWidget);
+      await tester.pumpAndSettle(const Duration(seconds: 6));
+    });
+
+    // On a desktop the message text has its own right-click menu (Select
+    // all, Copy). That menu has to carry Copy text as well.
+    testWidgets('right-clicking the text offers Copy text and copies the '
+        'plain text', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      try {
+        await pumpMessage(tester, 'Ship **it** today');
+
+        await rightClick(tester, find.byType(SelectableText));
+        expect(find.text('Copy text'), findsOneWidget);
+
+        await tester.tap(find.text('Copy text'));
+        await tester.pump();
+
+        expect(copied, ['Ship it today']);
+        expect(find.text('Copied'), findsOneWidget);
+        await tester.pumpAndSettle(const Duration(seconds: 6));
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('a message with no text has no Copy text, only Report '
+        'message', (tester) async {
+      await pumpMessage(tester, '   ');
+
+      await tester.tap(find.byTooltip('Message actions'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Copy text'), findsNothing);
+      expect(find.text('Report message'), findsOneWidget);
+      expect(copied, isEmpty);
+    });
+
+    test('channelMessagePlainText drops the Markdown marks', () {
+      expect(channelMessagePlainText('a **b** c'), 'a b c');
     });
   });
 

@@ -4,7 +4,23 @@ import 'package:zedu/features/features.dart';
 /// Opens the [QuickSwitcherDialog] on Cmd+K (macOS) or Ctrl+K (Windows,
 /// Linux), and the [KeyboardShortcutsDialog] on Cmd+/ or Ctrl+/, from any
 /// screen once the user is signed in. Alt+Up and Alt+Down move to the
-/// previous or next conversation in the Home sidebar.
+/// previous or next conversation in the Home sidebar, and Ctrl+1 to Ctrl+4
+/// (Cmd+1 to Cmd+4) open the rail's Home, DMs, People and Files.
+/// What Ctrl+1 to Ctrl+4 open, in the order the app rail lists them.
+const _railDestinations = <HomeSidebarType>[
+  HomeSidebarType.home,
+  HomeSidebarType.dms,
+  HomeSidebarType.people,
+  HomeSidebarType.files,
+];
+
+const _railDigitKeys = <LogicalKeyboardKey>[
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+];
+
 class QuickSwitcherShortcut extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -87,6 +103,21 @@ class _QuickSwitcherShortcutState extends ConsumerState<QuickSwitcherShortcut> {
     if (next != null) _openEntry(next);
   }
 
+  /// Opens [destination] on the rail. From a screen that is not Home it goes
+  /// to Home first, as clicking the rail icon does.
+  void _openDestination(HomeSidebarType destination) {
+    final signedIn =
+        ref.read(authNotifierProvider).status == AuthStatus.authenticated;
+    if (_open || !signedIn) return;
+
+    ref.read(homeSidebarProvider.notifier).setType(destination);
+
+    final location = _router.routerDelegate.currentConfiguration.uri;
+    if (location.path != AppRouter.home) {
+      _router.go(AppRouter.home);
+    }
+  }
+
   void _openEntry(QuickSwitcherEntry entry) {
     final conversation = entry.conversation;
     if (conversation == null) {
@@ -121,6 +152,12 @@ class _QuickSwitcherShortcutState extends ConsumerState<QuickSwitcherShortcut> {
             _moveConversation(-1),
         const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () =>
             _moveConversation(1),
+        for (var i = 0; i < _railDestinations.length; i++) ...{
+          SingleActivator(_railDigitKeys[i], control: true): () =>
+              _openDestination(_railDestinations[i]),
+          SingleActivator(_railDigitKeys[i], meta: true): () =>
+              _openDestination(_railDestinations[i]),
+        },
       },
       child: widget.child,
     );

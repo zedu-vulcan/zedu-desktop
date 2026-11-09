@@ -3,6 +3,12 @@ import 'package:zedu/features/features.dart';
 
 import '../../../../../helpers/helpers.dart';
 
+/// No channels, so the Channel tag button's # list has nothing to load.
+class _NoChannels extends ChannelNotifier {
+  @override
+  Future<List<Channel>> build() async => const [];
+}
+
 class _FakeSecureStorageService extends Fake implements SecureStorageService {
   final _values = <String, String>{};
 
@@ -28,6 +34,7 @@ Future<void> _pumpComposer(WidgetTester tester, {double width = 1000}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        channelProvider.overrideWith(_NoChannels.new),
         dmDraftStoreProvider.overrideWith(
           (ref) => DmDraftStore(
             _FakeSecureStorageService(),

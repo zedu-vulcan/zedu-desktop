@@ -26,6 +26,15 @@ class FailingSwitchNotifier extends WorkspaceNotifier {
       WorkspaceNotifier.switchErrorMessage;
 }
 
+// Keeps the invite dialog away from the locator and the API.
+class FakeUserProfileNotifier extends UserProfileNotifier {
+  @override
+  UserProfileState build() => const UserProfileState();
+
+  @override
+  Future<List<TeamMember>> fetchOrganisationMembers() async => const [];
+}
+
 Widget buildSwitcherUnderTest({WorkspaceNotifier Function()? notifier}) {
   final router = GoRouter(
     routes: [
@@ -56,6 +65,7 @@ Widget buildSwitcherUnderTest({WorkspaceNotifier Function()? notifier}) {
   return ProviderScope(
     overrides: [
       workspaceProvider.overrideWith(notifier ?? FakeWorkspaceNotifier.new),
+      userProfileNotifierProvider.overrideWith(FakeUserProfileNotifier.new),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
@@ -77,6 +87,24 @@ void main() {
 
       expect(find.text('Profile page'), findsOneWidget);
       expect(find.text('Settings'), findsNothing);
+    });
+
+    testWidgets('Invite closes the menu and opens the invite dialog', (
+      tester,
+    ) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 0.5;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(buildSwitcherUnderTest());
+      await tester.tap(find.text('Open menu'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Invite'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WorkspaceSwitcherList), findsNothing);
+      expect(find.byType(InviteTeammatesModal), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets(

@@ -459,7 +459,11 @@ class HomeChatArea extends ConsumerWidget {
       );
     }
 
-    return Column(
+    // The channel's full-history search, beside the messages (Ziki #2849).
+    final searchOpen =
+        channelId.isNotEmpty && ref.watch(channelSearchProvider) == channelId;
+
+    final chatColumn = Column(
       children: [
         _buildChatHeader(context, channelName, selected),
         Expanded(
@@ -481,6 +485,18 @@ class HomeChatArea extends ConsumerWidget {
             participants: members,
             isChannel: true,
           ),
+      ],
+    );
+    if (!searchOpen) return chatColumn;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: chatColumn),
+        SearchPanel(
+          key: ValueKey('channel-search-$channelId'),
+          channelId: channelId,
+          onClose: () => ref.read(channelSearchProvider.notifier).close(),
+        ),
       ],
     );
   }
@@ -641,6 +657,9 @@ class _ChannelHeaderMenu extends ConsumerWidget {
       icon: Icon(Icons.more_vert, color: colors.textHint),
 
       onSelected: (value) {
+        if (value == 'search') {
+          ref.read(channelSearchProvider.notifier).open(channel.id);
+        }
         if (value == 'links') _showLinks(context, ref);
         if (value == 'export') {
           showDialog<void>(
@@ -648,11 +667,29 @@ class _ChannelHeaderMenu extends ConsumerWidget {
             builder: (_) => ChannelExportDialog(channel: channel),
           );
         }
-        if (value == 'leave') _confirmLeave(context, ref);
-        if (value == 'archive') _confirmArchive(context, ref);
-        if (value == 'unarchive') _setArchived(context, ref, archived: false);
+        if (value == 'leave') confirmLeaveChannel(context, ref, channel);
+        if (value == 'archive') confirmArchiveChannel(context, ref, channel);
+        if (value == 'unarchive') {
+          setChannelArchived(context, ref, channel, archived: false);
+        }
       },
       itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'search',
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 18, color: colors.textPrimary),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'Search in channel',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.textPrimary),
+                ),
+              ),
+            ],
+          ),
+        ),
         PopupMenuItem(
           value: 'links',
           child: Row(
@@ -718,69 +755,6 @@ class _ChannelHeaderMenu extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmArchive(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Archive #${channel.name}?'),
-        content: const Text(
-          'It leaves the sidebar for everyone and its history is kept. '
-          'You can unarchive it from the channel directory.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Archive'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-    await _setArchived(context, ref, archived: true);
-  }
-
-  Future<void> _setArchived(
-    BuildContext context,
-    WidgetRef ref, {
-    required bool archived,
-  }) async {
-    final overlay = Overlay.of(context, rootOverlay: true);
-    final result = await ref
-        .read(channelProvider.notifier)
-        .archiveChannel(channel, archived: archived);
-
-    switch (result) {
-      case Success<void>():
-        if (archived) {
-          // Open another channel so the header never shows an archived one.
-          final remaining =
-              ref.read(channelProvider).value ?? const <Channel>[];
-          ref
-              .read(activeChatProvider.notifier)
-              .selectChannel(
-                remaining.isEmpty ? 'general' : remaining.first.name,
-              );
-        }
-        AppToastService.showWith(
-          overlay,
-          type: AppToastType.success,
-          message: archived
-              ? '#${channel.name} was archived'
-              : '#${channel.name} was unarchived',
-        );
-      case Failure<void>(:final error):
-        AppToastService.showWith(
-          overlay,
-          type: AppToastType.error,
-          message: archiveFailureMessage(error, channel, archived: archived),
-        );
-    }
-  }
-
   Future<void> _showLinks(BuildContext context, WidgetRef ref) async {
     List<ConversationLinkSource> pendingSources() => [
       for (final message in ref.read(chatHistoryProvider(channel.id)).messages)
@@ -816,70 +790,6 @@ class _ChannelHeaderMenu extends ConsumerWidget {
         },
       ),
     );
-  }
-
-  Future<void> _confirmLeave(BuildContext context, WidgetRef ref) async {
-    final colors = context.colors;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Leave #${channel.name}?'),
-        content: Text(
-          channel.isPrivate
-              ? 'You will stop getting its messages, and someone will need to '
-                    'add you again to rejoin.'
-              : 'You will stop getting its messages. You can join it again '
-                    'from the channel directory.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text('Leave', style: TextStyle(color: colors.error)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !context.mounted) return;
-
-    final overlay = Overlay.of(context, rootOverlay: true);
-    final result = await ref
-        .read(channelProvider.notifier)
-        .leaveChannel(channel.id);
-
-    switch (result) {
-      case Success<void>():
-        // Open another channel so the header never shows one we left.
-        final remaining = (ref.read(channelProvider).value ?? const <Channel>[])
-            .where((c) => !c.archived && c.hasAccess)
-            .toList();
-        ref
-            .read(activeChatProvider.notifier)
-            .selectChannel(
-              remaining.isEmpty ? 'general' : remaining.first.name,
-            );
-        AppToastService.showWith(
-          overlay,
-          type: AppToastType.success,
-          message: 'You left #${channel.name}',
-        );
-      case Failure<void>(:final error):
-        AppToastService.showWith(
-          overlay,
-          type: AppToastType.error,
-          message: switch (error.kind) {
-            ApiFailureKind.unknown || ApiFailureKind.parsing =>
-              'Could not leave #${channel.name}. Please try again.',
-            _ =>
-              error.friendlyMessage.isEmpty
-                  ? 'Could not leave #${channel.name}'
-                  : error.friendlyMessage,
-          },
-        );
-    }
   }
 }
 
