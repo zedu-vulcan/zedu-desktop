@@ -272,6 +272,11 @@ class _OlderMessagesFooter extends ConsumerWidget {
   }
 }
 
+/// The text of a channel message as people read it, without the Markdown
+/// marks, for "Copy text".
+String channelMessagePlainText(String text) =>
+    buildInlineMarkdownSpan(text, const TextStyle()).toPlainText();
+
 class ChannelMessageTile extends ConsumerStatefulWidget {
   const ChannelMessageTile({
     super.key,
@@ -425,8 +430,28 @@ class _ChannelMessageTileState extends ConsumerState<ChannelMessageTile> {
                   ReportMessageMenu(
                     senderName: _message.senderName,
                     messageText: _message.text,
+                    copyText: channelMessagePlainText(_message.text),
                     child: MessageLinkScope(
                       builder: (context, links) => SelectableText.rich(
+                        // On desktop a right-click opens the text's own menu
+                        // (Select all, Copy), so "Copy text" is added to it.
+                        contextMenuBuilder: (context, editableTextState) =>
+                            AdaptiveTextSelectionToolbar.buttonItems(
+                              anchors: editableTextState.contextMenuAnchors,
+                              buttonItems: [
+                                ContextMenuButtonItem(
+                                  label: 'Copy text',
+                                  onPressed: () {
+                                    editableTextState.hideToolbar();
+                                    copyMessageText(
+                                      this.context,
+                                      channelMessagePlainText(_message.text),
+                                    );
+                                  },
+                                ),
+                                ...editableTextState.contextMenuButtonItems,
+                              ],
+                            ),
                         buildInlineMarkdownSpan(
                           _message.text,
                           TextStyle(fontSize: 15, color: colors.textPrimary),

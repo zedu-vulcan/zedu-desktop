@@ -240,6 +240,16 @@ class _PreviewCard extends StatelessWidget {
 
   final WorkspaceFile file;
 
+  Future<void> _copy(BuildContext context, String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    AppToastService.show(
+      context,
+      type: AppToastType.success,
+      message: 'File name copied',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -293,15 +303,32 @@ class _PreviewCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        file.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.textTheme.bodyMedium?.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: colors.textPrimary,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              file.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.textTheme.bodyMedium?.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Copy file name',
+                            visualDensity: VisualDensity.compact(
+                              horizontal: VisualDensity.minimumDensity,
+                              vertical: VisualDensity.minimumDensity,
+                            ),
+                            iconSize: 16,
+                            color: colors.textSecondary,
+                            icon: const Icon(Icons.copy),
+                            onPressed: () => _copy(context, file.name),
+                          ),
+                        ],
                       ),
                       if (file.fileType.isNotEmpty)
                         Text(

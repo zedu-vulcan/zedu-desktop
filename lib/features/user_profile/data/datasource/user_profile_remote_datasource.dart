@@ -578,14 +578,17 @@ class UserProfileRemoteDataSourceImpl implements UserProfileRemoteDataSource {
     }
     // The API serves an organisation's roles at /organisations/{orgId}/roles;
     // /profile/organization/roles does not exist (#720).
+    // With no organisation selected there are no roles to show.
     if (orgId == null || orgId.isEmpty) return const [];
     final response = await _apiBaseService.get<Map<String, dynamic>>(
       path: '/organisations/$orgId/roles',
     );
-    final data = response.data['data'] as List<dynamic>;
+    final data = response.data['data'] as List<dynamic>? ?? const [];
     return data
-        .cast<Map<String, dynamic>>()
-        .map(RolePermissionModel.fromJson)
+        .whereType<Map<dynamic, dynamic>>()
+        .map(
+          (role) => RolePermissionModel.fromJson(role.cast<String, dynamic>()),
+        )
         .toList();
   }
 
