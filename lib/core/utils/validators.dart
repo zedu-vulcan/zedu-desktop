@@ -42,13 +42,14 @@ class Validators {
   }
 
   static String? validateEmail(BuildContext context, String? value) {
-    if (value == null || value.isEmpty) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
       return 'Email is required';
     }
     final emailRegex = RegExp(
       r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
     );
-    if (!emailRegex.hasMatch(value)) return 'Please enter a valid email';
+    if (!emailRegex.hasMatch(trimmed)) return 'Please enter a valid email';
     return null;
   }
 
